@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- PERMISSIONS POUR LA LUTTE CONTRE LE VOL -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -15,7 +15,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="MYSAFELEX" 
+        android:label="MYSAFELEX"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
@@ -28,7 +28,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Service qui tourne en arrière-plan pour le GPS et l'alarme -->
         <service
             android:name=".TheftService"
             android:foregroundServiceType="location"
