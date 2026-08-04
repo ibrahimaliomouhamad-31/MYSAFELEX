@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
@@ -51,15 +52,22 @@ public class TheftService extends Service implements LocationListener {
             audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0);
         }
 
-        // 2. Déclencher l'alarme sonore en boucle
+        // 2. Déclencher l'alarme avec les bons attributs (contourne le mode silencieux)
         if (alarmPlayer == null) {
-            Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            Uri alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM);
             if (alarmSound == null) {
-                alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE);
             }
             try {
                 alarmPlayer = new MediaPlayer();
-                alarmPlayer.setAudioStreamType(AudioManager.STREAM_ALARM); // Utiliser le canal Alarme
+                
+                // LA LIGNE MAGIQUE POUR FORCER LE SON :
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                alarmPlayer.setAudioAttributes(audioAttributes);
+                
                 alarmPlayer.setDataSource(this, alarmSound);
                 alarmPlayer.setLooping(true);
                 alarmPlayer.setVolume(1.0f, 1.0f);
