@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -43,21 +44,33 @@ public class TheftService extends Service implements LocationListener {
                 .build();
         startForeground(1, notification);
 
-        // 1. Déclencher l'alarme sonore en boucle
+        // 1. Forcer le volume de l'alarme au maximum
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0);
+        }
+
+        // 2. Déclencher l'alarme sonore en boucle
         if (alarmPlayer == null) {
             Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
             if (alarmSound == null) {
-                alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
             }
-            alarmPlayer = MediaPlayer.create(this, alarmSound);
-            if (alarmPlayer != null) {
+            try {
+                alarmPlayer = new MediaPlayer();
+                alarmPlayer.setAudioStreamType(AudioManager.STREAM_ALARM); // Utiliser le canal Alarme
+                alarmPlayer.setDataSource(this, alarmSound);
                 alarmPlayer.setLooping(true);
                 alarmPlayer.setVolume(1.0f, 1.0f);
+                alarmPlayer.prepare();
                 alarmPlayer.start();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
 
-        // 2. Démarrer le GPS
+        // 3. Démarrer le GPS
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager != null) {
@@ -84,8 +97,7 @@ public class TheftService extends Service implements LocationListener {
     }
 
     @Override
-    public void onLocationChanged(Location location) {
-    }
+    public void onLocationChanged(Location location) {}
 
     @Override
     public void onStatusChanged(String provider, int status, Bundle extras) {}
