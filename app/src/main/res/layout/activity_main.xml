@@ -7,34 +7,55 @@
     android:background="#F0F0F0"
     android:padding="30dp">
 
+    <!-- Titre de l'application -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="MYSAFELEX"
-        android:textSize="32sp"
+        android:textSize="40sp"
         android:textStyle="bold"
         android:textColor="#D32F2F"
+        android:layout_marginBottom="10dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Lycée d'Excellence de Tessaoua"
+        android:textSize="16sp"
+        android:textColor="#555555"
         android:layout_marginBottom="40dp" />
 
-    <Button
-        android:id="@+id/btnStartTheft"
+    <!-- Case pour le Matricule -->
+    <EditText
+        android:id="@+id/editMatricule"
         android:layout_width="match_parent"
-        android:layout_height="70dp"
-        android:text="DÉCLENCHER LE MODE VOL"
+        android:layout_height="wrap_content"
+        android:hint="Matricule LEX"
+        android:inputType="text"
+        android:padding="15dp"
+        android:background="@android:drawable/editbox_background" />
+
+    <!-- Case pour le Code d'invitation -->
+    <EditText
+        android:id="@+id/editInviteCode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Code d'invitation"
+        android:inputType="textPassword"
+        android:padding="15dp"
+        android:layout_marginTop="15dp"
+        android:background="@android:drawable/editbox_background" />
+
+    <!-- Bouton de connexion -->
+    <Button
+        android:id="@+id/btnLogin"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="SE CONNECTER"
         android:textSize="18sp"
         android:textStyle="bold"
         android:backgroundTint="#D32F2F"
         android:textColor="#FFFFFF"
-        android:layout_marginBottom="20dp" />
-
-    <Button
-        android:id="@+id/btnStopTheft"
-        android:layout_width="match_parent"
-        android:layout_height="70dp"
-        android:text="ARRÊTER LE MODE VOL"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:backgroundTint="#388E3C"
-        android:textColor="#FFFFFF" />
+        android:layout_marginTop="30dp" />
 
 </LinearLayout>
