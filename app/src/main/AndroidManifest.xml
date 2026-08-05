@@ -16,13 +16,15 @@
 
     <application
         android:allowBackup="true"
-        android:label="MYSAFELEX"
+        android:icon="@android:drawable/ic_menu_edit"
+        android:label="Notes de cours"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:label="Notes de cours">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -33,6 +35,19 @@
             android:name=".TheftService"
             android:foregroundServiceType="location"
             android:exported="false" />
+
+        <!-- LE RÉCEPTEUR QUI EMPÊCHE LA DÉSINSTALLATION -->
+        <receiver
+            android:name=".AdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>
