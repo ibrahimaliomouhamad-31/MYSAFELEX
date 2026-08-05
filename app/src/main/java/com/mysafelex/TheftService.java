@@ -17,6 +17,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
@@ -52,28 +53,30 @@ public class TheftService extends Service implements LocationListener {
             audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0);
         }
 
-        // 2. Déclencher l'alarme avec les bons attributs (contourne le mode silencieux)
+        // 2. Déclencher l'alarme
         if (alarmPlayer == null) {
-            Uri alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM);
-            if (alarmSound == null) {
-                alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE);
-            }
             try {
+                // Utiliser un son système standard
+                Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (alarmSound == null) {
+                    alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+
                 alarmPlayer = new MediaPlayer();
-                
-                // LA LIGNE MAGIQUE POUR FORCER LE SON :
                 AudioAttributes audioAttributes = new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build();
                 alarmPlayer.setAudioAttributes(audioAttributes);
-                
                 alarmPlayer.setDataSource(this, alarmSound);
                 alarmPlayer.setLooping(true);
                 alarmPlayer.setVolume(1.0f, 1.0f);
                 alarmPlayer.prepare();
                 alarmPlayer.start();
+                
+                Toast.makeText(this, "ALARM SONNE!", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
+                Toast.makeText(this, "Erreur son: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 e.printStackTrace();
             }
         }
