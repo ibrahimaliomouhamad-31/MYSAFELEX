@@ -6,24 +6,24 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
-import android.media.MediaPlayer;
+import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.IBinder;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.Bundle;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 public class TheftService extends Service implements LocationListener {
 
-    private MediaPlayer alarmPlayer;
+    private Ringtone ringtone;
     private LocationManager locationManager;
 
     @Override
@@ -46,42 +46,44 @@ public class TheftService extends Service implements LocationListener {
                 .build();
         startForeground(1, notification);
 
-        // 1. Forcer le volume de l'alarme au maximum
+        // 1. Forcer le volume au max
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (audioManager != null) {
-            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0);
+            int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0);
+            maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING);
+            audioManager.setStreamVolume(AudioManager.STREAM_RING, maxVol, 0);
         }
 
-        // 2. Déclencher l'alarme
-        if (alarmPlayer == null) {
+        // 2. Utiliser la méthode native Ringtone (infaillible)
+        if (ringtone == null) {
             try {
-                // Utiliser un son système standard
-                Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                Uri alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM);
                 if (alarmSound == null) {
-                    alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                    alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE);
                 }
-
-                alarmPlayer = new MediaPlayer();
+                
+                ringtone = RingtoneManager.getRingtone(getApplicationContext(), alarmSound);
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ringtone.setLooping(true);
+                }
+                
+                // Forcer le son à sortir même en silencieux
                 AudioAttributes audioAttributes = new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build();
-                alarmPlayer.setAudioAttributes(audioAttributes);
-                alarmPlayer.setDataSource(this, alarmSound);
-                alarmPlayer.setLooping(true);
-                alarmPlayer.setVolume(1.0f, 1.0f);
-                alarmPlayer.prepare();
-                alarmPlayer.start();
+                ringtone.setAudioAttributes(audioAttributes);
                 
-                Toast.makeText(this, "ALARM SONNE!", Toast.LENGTH_SHORT).show();
+                ringtone.play();
+                Toast.makeText(this, "Alarme lancée!", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Erreur son: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                e.printStackTrace();
+                Toast.makeText(this, "Erreur: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         }
 
-        // 3. Démarrer le GPS
+        // 3. GPS
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager != null) {
@@ -97,10 +99,9 @@ public class TheftService extends Service implements LocationListener {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (alarmPlayer != null) {
-            alarmPlayer.stop();
-            alarmPlayer.release();
-            alarmPlayer = null;
+        if (ringtone != null && ringtone.isPlaying()) {
+            ringtone.stop();
+            ringtone = null;
         }
         if (locationManager != null) {
             locationManager.removeUpdates(this);
@@ -109,19 +110,14 @@ public class TheftService extends Service implements LocationListener {
 
     @Override
     public void onLocationChanged(Location location) {}
-
     @Override
     public void onStatusChanged(String provider, int status, Bundle extras) {}
-
     @Override
     public void onProviderEnabled(String provider) {}
-
     @Override
     public void onProviderDisabled(String provider) {}
 
     @Nullable
     @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
+    public IBinder onBind(Intent intent) { return null; }
 }
