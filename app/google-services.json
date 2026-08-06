@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "964114168239",
+    "project_id": "mysafelex",
+    "storage_bucket": "mysafelex.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:964114168239:android:5f51cafcd0a89cd296175a",
+        "android_client_info": {
+          "package_name": "com.mysafelex"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA1SEi5VNovV72917TUrr8DL-06ZxUj0Bc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
