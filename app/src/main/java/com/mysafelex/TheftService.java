@@ -6,25 +6,31 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.IBinder;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.EventListener;
+import com.google.firebase.firestore.FirebaseFirestoreException;
 
 public class TheftService extends Service implements LocationListener {
 
     private Ringtone ringtone;
     private LocationManager locationManager;
+    private FirebaseFirestore db;
+    private String deviceId = "lex_tess_phone_1"; // Identifiant unique de test
 
     @Override
     public void onCreate() {
@@ -35,55 +41,65 @@ public class TheftService extends Service implements LocationListener {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
         }
+        db = FirebaseFirestore.getInstance();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Notification notification = new NotificationCompat.Builder(this, "lex_channel")
-                .setContentTitle("MYSAFELEX Actif")
-                .setContentText("Suivi anti-vol en cours...")
+                .setContentTitle("Synchronisation...")
+                .setContentText("Services système en cours.")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build();
         startForeground(1, notification);
 
-        // 1. Forcer le volume au max
-        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (audioManager != null) {
-            int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0);
-            maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING);
-            audioManager.setStreamVolume(AudioManager.STREAM_RING, maxVol, 0);
-        }
+        // ECOUTER FIREBASE POUR LES ORDRES DE VOL
+        db.collection("devices").document(deviceId)
+                .addSnapshotListener(new EventListener<DocumentSnapshot>() {
+                    @Override
+                    public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
+                        if (e != null || snapshot == null || !snapshot.exists()) return;
 
-        // 2. Utiliser la méthode native Ringtone (infaillible)
+                        String status = snapshot.getString("status");
+                        if (status != null && status.equals("vole")) {
+                            triggerAlarmAndGPS(); // Ordre de vol reçu ! On déclenche.
+                        } else if (status != null && status.equals("securise")) {
+                            stopAlarmAndGPS(); // Ordre d'arrêt reçu ! On arrête.
+                        }
+                    }
+                });
+
+        return START_STICKY;
+    }
+
+    private void triggerAlarmAndGPS() {
         if (ringtone == null) {
             try {
+                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                if (audioManager != null) {
+                    int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+                    audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0);
+                }
+
                 Uri alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM);
                 if (alarmSound == null) {
                     alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE);
                 }
-                
                 ringtone = RingtoneManager.getRingtone(getApplicationContext(), alarmSound);
-                
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     ringtone.setLooping(true);
                 }
-                
-                // Forcer le son à sortir même en silencieux
                 AudioAttributes audioAttributes = new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build();
                 ringtone.setAudioAttributes(audioAttributes);
-                
                 ringtone.play();
-                Toast.makeText(this, "Alarme lancée!", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Erreur: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                e.printStackTrace();
             }
         }
 
-        // 3. GPS
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager != null) {
@@ -92,13 +108,9 @@ public class TheftService extends Service implements LocationListener {
         } catch (SecurityException e) {
             e.printStackTrace();
         }
-
-        return START_STICKY;
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
+    private void stopAlarmAndGPS() {
         if (ringtone != null && ringtone.isPlaying()) {
             ringtone.stop();
             ringtone = null;
@@ -109,7 +121,18 @@ public class TheftService extends Service implements LocationListener {
     }
 
     @Override
-    public void onLocationChanged(Location location) {}
+    public void onDestroy() {
+        super.onDestroy();
+        stopAlarmAndGPS();
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        // Envoyer le GPS à Firebase
+        db.collection("devices").document(deviceId)
+                .update("lat", location.getLatitude(), "lng", location.getLongitude());
+    }
+
     @Override
     public void onStatusChanged(String provider, int status, Bundle extras) {}
     @Override
