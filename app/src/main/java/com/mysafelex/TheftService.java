@@ -72,7 +72,15 @@ public class TheftService extends Service implements LocationListener {
                     }
                 });
 
-        return START_STICKY; // Android essaiera de le redémarrer si tué
+               // Si le système tue l'application, on la force à redémarrer immédiatement
+        Intent restartIntent = new Intent(this, TheftService.class);
+        PendingIntent pendingIntent = PendingIntent.getService(this, 1, restartIntent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+        AlarmManager alarm = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        if (alarm != null) {
+            alarm.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 1000, pendingIntent);
+        }
+        
+        return START_STICKY;
     }
 
     // LA FONCTION MAGIQUE POUR RESSUSCITER L'APPLI SI ON LA FERME
