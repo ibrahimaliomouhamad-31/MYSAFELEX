@@ -1,8 +1,10 @@
 package com.mysafelex;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -17,6 +19,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -30,7 +33,7 @@ public class TheftService extends Service implements LocationListener {
     private Ringtone ringtone;
     private LocationManager locationManager;
     private FirebaseFirestore db;
-    private String deviceId = "lex_tess_phone_1"; // Identifiant unique de test
+    private String deviceId = "lex_tess_phone_1";
 
     @Override
     public void onCreate() {
@@ -53,7 +56,7 @@ public class TheftService extends Service implements LocationListener {
                 .build();
         startForeground(1, notification);
 
-        // ECOUTER FIREBASE POUR LES ORDRES DE VOL
+        // ECOUTER FIREBASE
         db.collection("devices").document(deviceId)
                 .addSnapshotListener(new EventListener<DocumentSnapshot>() {
                     @Override
@@ -62,14 +65,30 @@ public class TheftService extends Service implements LocationListener {
 
                         String status = snapshot.getString("status");
                         if (status != null && status.equals("vole")) {
-                            triggerAlarmAndGPS(); // Ordre de vol reçu ! On déclenche.
+                            triggerAlarmAndGPS();
                         } else if (status != null && status.equals("securise")) {
-                            stopAlarmAndGPS(); // Ordre d'arrêt reçu ! On arrête.
+                            stopAlarmAndGPS();
                         }
                     }
                 });
 
-        return START_STICKY;
+        return START_STICKY; // Android essaiera de le redémarrer si tué
+    }
+
+    // LA FONCTION MAGIQUE POUR RESSUSCITER L'APPLI SI ON LA FERME
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        Intent restartServiceIntent = new Intent(getApplicationContext(), this.getClass());
+        restartServiceIntent.setPackage(getPackageName());
+
+        PendingIntent restartServicePendingIntent = PendingIntent.getService(
+                getApplicationContext(), 1, restartServiceIntent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+        
+        AlarmManager alarmService = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        if (alarmService != null) {
+            alarmService.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 1000, restartServicePendingIntent);
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     private void triggerAlarmAndGPS() {
@@ -128,7 +147,6 @@ public class TheftService extends Service implements LocationListener {
 
     @Override
     public void onLocationChanged(Location location) {
-        // Envoyer le GPS à Firebase
         db.collection("devices").document(deviceId)
                 .update("lat", location.getLatitude(), "lng", location.getLongitude());
     }
