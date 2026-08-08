@@ -57,5 +57,13 @@
         android:backgroundTint="#D32F2F"
         android:textColor="#FFFFFF"
         android:layout_marginTop="30dp" />
-
+        <TextView
+        android:id="@+id/txtToken"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Token: Chargement..."
+        android:textSize="12sp"
+        android:textColor="#888888"
+        android:layout_marginTop="30dp"
+        android:breakStrategy="simple" />
 </LinearLayout>
