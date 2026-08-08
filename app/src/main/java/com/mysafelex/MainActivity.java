@@ -10,13 +10,16 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 public class MainActivity extends AppCompatActivity {
 
     private EditText editMatricule, editCode;
     private Button btnLogin;
+    private TextView txtToken;
     private static final int REQUEST_CODE_ENABLE_ADMIN = 1;
 
     @Override
@@ -27,8 +30,9 @@ public class MainActivity extends AppCompatActivity {
         editMatricule = findViewById(R.id.editMatricule);
         editCode = findViewById(R.id.editInviteCode);
         btnLogin = findViewById(R.id.btnLogin);
+        txtToken = findViewById(R.id.txtToken);
 
-        // Demander à Android de NE PAS tuer l'application (Ignorer l'optimisation batterie)
+        // Demander l'optimisation batterie
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
@@ -36,13 +40,25 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         }
 
-        // Démarrer la surveillance en arrière-plan
+        // Démarrer la surveillance
         Intent serviceIntent = new Intent(this, TheftService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
         } else {
             startService(serviceIntent);
         }
+
+        // CHERCHER ET AFFICHER LE TOKEN
+        FirebaseMessaging.getInstance().getToken()
+                .addOnCompleteListener(task -> {
+                    if (!task.isSuccessful()) {
+                        txtToken.setText("Erreur de token");
+                        return;
+                    }
+                    // Récupérer le token
+                    String token = task.getResult();
+                    txtToken.setText("Token: " + token);
+                });
 
         btnLogin.setOnClickListener(v -> {
             String matricule = editMatricule.getText().toString();
