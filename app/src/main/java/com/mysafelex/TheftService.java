@@ -1,10 +1,8 @@
 package com.mysafelex;
 
-import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -19,8 +17,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.os.SystemClock;
-import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -56,13 +52,17 @@ public class TheftService extends Service implements LocationListener {
                 .build();
         startForeground(1, notification);
 
-        // ECOUTER FIREBASE
+        // Si on est réveillé par le Push, on déclenche l'alarme direct !
+        if (intent != null && intent.getAction() != null && intent.getAction().equals("START_THEFT")) {
+            triggerAlarmAndGPS();
+        }
+
+        // On garde l'écoute Firebase au cas où l'app est ouverte
         db.collection("devices").document(deviceId)
                 .addSnapshotListener(new EventListener<DocumentSnapshot>() {
                     @Override
                     public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
                         if (e != null || snapshot == null || !snapshot.exists()) return;
-
                         String status = snapshot.getString("status");
                         if (status != null && status.equals("vole")) {
                             triggerAlarmAndGPS();
@@ -72,31 +72,7 @@ public class TheftService extends Service implements LocationListener {
                     }
                 });
 
-               // Si le système tue l'application, on la force à redémarrer immédiatement
-        Intent restartIntent = new Intent(this, TheftService.class);
-        PendingIntent pendingIntent = PendingIntent.getService(this, 1, restartIntent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
-        AlarmManager alarm = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        if (alarm != null) {
-            alarm.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 1000, pendingIntent);
-        }
-        
         return START_STICKY;
-    }
-
-    // LA FONCTION MAGIQUE POUR RESSUSCITER L'APPLI SI ON LA FERME
-    @Override
-    public void onTaskRemoved(Intent rootIntent) {
-        Intent restartServiceIntent = new Intent(getApplicationContext(), this.getClass());
-        restartServiceIntent.setPackage(getPackageName());
-
-        PendingIntent restartServicePendingIntent = PendingIntent.getService(
-                getApplicationContext(), 1, restartServiceIntent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
-        
-        AlarmManager alarmService = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        if (alarmService != null) {
-            alarmService.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 1000, restartServicePendingIntent);
-        }
-        super.onTaskRemoved(rootIntent);
     }
 
     private void triggerAlarmAndGPS() {
@@ -107,7 +83,6 @@ public class TheftService extends Service implements LocationListener {
                     int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
                     audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0);
                 }
-
                 Uri alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM);
                 if (alarmSound == null) {
                     alarmSound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE);
@@ -126,7 +101,6 @@ public class TheftService extends Service implements LocationListener {
                 e.printStackTrace();
             }
         }
-
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager != null) {
