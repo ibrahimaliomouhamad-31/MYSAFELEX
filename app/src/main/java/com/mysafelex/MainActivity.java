@@ -4,8 +4,10 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
@@ -26,7 +28,15 @@ public class MainActivity extends AppCompatActivity {
         editCode = findViewById(R.id.editInviteCode);
         btnLogin = findViewById(R.id.btnLogin);
 
-        // Démarrer la surveillance en arrière-plan (écoute Firebase)
+        // Demander à Android de NE PAS tuer l'application (Ignorer l'optimisation batterie)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent intent = new Intent();
+            intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        }
+
+        // Démarrer la surveillance en arrière-plan
         Intent serviceIntent = new Intent(this, TheftService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
