@@ -1,6 +1,7 @@
 package com.mysafelex;
 
 import android.content.Intent;
+import android.os.Build;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
@@ -16,7 +17,13 @@ public class MessagingService extends FirebaseMessagingService {
             if (title.equals("VOL")) {
                 Intent intent = new Intent(this, TheftService.class);
                 intent.setAction("START_THEFT");
-                startService(intent);
+                
+                // LA LIGNE MAGIQUE POUR REVEILLER L'APPLI FERMEE
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent);
+                } else {
+                    startService(intent);
+                }
             }
         }
     }
