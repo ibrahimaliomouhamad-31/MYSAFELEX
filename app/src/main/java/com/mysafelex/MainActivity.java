@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        Toast.makeText(this, "VERSION 3.0", Toast.LENGTH_LONG).show();
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
 
         editMatricule = findViewById(R.id.editMatricule);
