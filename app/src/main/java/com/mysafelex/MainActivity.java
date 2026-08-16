@@ -33,6 +33,7 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseFirestore db;
     private String currentToken = "";
     private String currentMatricule = "";
+    private long lastClickTime = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,7 +80,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startAppSystems() {
-        // Demander les permissions
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
@@ -105,7 +105,6 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
 
-        // FAILLE 10 : Bouton fantôme. On gère l'erreur proprement.
         btnLogin.setEnabled(false);
         btnLogin.setText("Initialisation sécurité...");
 
@@ -115,17 +114,19 @@ public class MainActivity extends AppCompatActivity {
                         if (!task.isSuccessful()) {
                             txtToken.setText("Erreur de token.");
                             btnLogin.setText("Réessayer");
-                            btnLogin.setOnClickListener(v -> startAppSystems()); // Vrai bouton retry
+                            btnLogin.setOnClickListener(v -> startAppSystems());
                             btnLogin.setEnabled(true);
                             return;
                         }
                         currentToken = task.getResult();
-                        txtToken.setText("Token: " + currentToken);
+                        // FAILLE 1 : On masque le token pour éviter le vol
+                        txtToken.setText("Système de sécurité: ACTIF");
                         btnLogin.setEnabled(true);
                         btnLogin.setText("SAUVEGARDER");
                         setupLoginClickListener();
                     });
         } else {
+            txtToken.setText("Système de sécurité: ACTIF");
             btnLogin.setEnabled(true);
             btnLogin.setText("SAUVEGARDER");
             setupLoginClickListener();
@@ -134,6 +135,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupLoginClickListener() {
         btnLogin.setOnClickListener(v -> {
+            // FAILLE 4 : Anti double-clic (Debounce)
+            if (System.currentTimeMillis() - lastClickTime < 2000) return;
+            lastClickTime = System.currentTimeMillis();
+
             String matricule = editMatricule.getText().toString();
             String code = editCode.getText().toString();
 
@@ -143,8 +148,12 @@ public class MainActivity extends AppCompatActivity {
             }
 
             String savedPin = prefs.getString("pin_code", "");
-            if (!savedPin.isEmpty() && code.equals(savedPin)) {
+            // FAILLE 5 : Vérifier que le PIN correspond AVANT d'arrêter l'alarme
+            if (!savedPin.isEmpty() && code.equals(savedPin) && matricule.equals(currentMatricule)) {
                 stopTheftRemotely(matricule);
+                return;
+            } else if (!savedPin.isEmpty()) {
+                Toast.makeText(this, "Code PIN incorrect.", Toast.LENGTH_SHORT).show();
                 return;
             }
 
