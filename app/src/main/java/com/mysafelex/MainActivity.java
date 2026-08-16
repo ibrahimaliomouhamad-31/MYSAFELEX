@@ -119,7 +119,6 @@ public class MainActivity extends AppCompatActivity {
                             return;
                         }
                         currentToken = task.getResult();
-                        // FAILLE 1 : On masque le token pour éviter le vol
                         txtToken.setText("Système de sécurité: ACTIF");
                         btnLogin.setEnabled(true);
                         btnLogin.setText("SAUVEGARDER");
@@ -135,7 +134,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupLoginClickListener() {
         btnLogin.setOnClickListener(v -> {
-            // FAILLE 4 : Anti double-clic (Debounce)
             if (System.currentTimeMillis() - lastClickTime < 2000) return;
             lastClickTime = System.currentTimeMillis();
 
@@ -148,8 +146,13 @@ public class MainActivity extends AppCompatActivity {
             }
 
             String savedPin = prefs.getString("pin_code", "");
-            // FAILLE 5 : Vérifier que le PIN correspond AVANT d'arrêter l'alarme
+            // FAILLE 9 : Vérifier que le PIN correspond AVANT d'arrêter l'alarme
             if (!savedPin.isEmpty() && code.equals(savedPin) && matricule.equals(currentMatricule)) {
+                // FAILLE 4 : Arrêt LOCAL en plus de l'arrêt distant (Mode Avion)
+                Intent stopIntent = new Intent(this, TheftService.class);
+                stopIntent.setAction("STOP_THEFT");
+                startService(stopIntent); 
+                
                 stopTheftRemotely(matricule);
                 return;
             } else if (!savedPin.isEmpty()) {
@@ -176,19 +179,16 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "Alarme arrêtée !", Toast.LENGTH_SHORT).show();
                     editCode.setText("");
                 })
-                .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'arrêt.", Toast.LENGTH_SHORT).show());
+                .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'arrêt réseau, mais arrêtée localement.", Toast.LENGTH_SHORT).show());
     }
 
     private void registerStudentInDatabase(String matricule) {
+        // FAILLE 1 : Utiliser merge pour ne pas écraser le statut si l'élève existe déjà
         Map<String, Object> studentData = new HashMap<>();
-        studentData.put("status", "securise");
-        studentData.put("lat", null);
-        studentData.put("lng", null);
-        studentData.put("photoBase64", null);
         studentData.put("token", currentToken);
 
         db.collection("devices").document(matricule)
-                .set(studentData)
+                .set(studentData, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener(aVoid -> {
                     Toast.makeText(this, "Inscription réussie ! Vous êtes protégé.", Toast.LENGTH_SHORT).show();
                     editMatricule.setEnabled(false);
