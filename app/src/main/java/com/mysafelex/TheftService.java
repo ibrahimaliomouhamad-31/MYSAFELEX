@@ -20,6 +20,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -34,7 +35,6 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
-import com.google.firebase.firestore.SetOptions;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -48,6 +48,7 @@ public class TheftService extends Service {
     private boolean isTheftActive = false;
     private Handler volumeHandler;
     private Runnable volumeRunnable;
+    private PowerManager.WakeLock wakeLock;
 
     @Override
     public void onCreate() {
@@ -71,7 +72,8 @@ public class TheftService extends Service {
                     Map<String, Object> data = new HashMap<>();
                     data.put("lat", location.getLatitude());
                     data.put("lng", location.getLongitude());
-                    db.collection("devices").document(deviceId).set(data, SetOptions.merge());
+                    // FAILLE 4 : Utiliser update au lieu de set pour économiser le réseau
+                    db.collection("devices").document(deviceId).update(data);
                 }
             }
         };
@@ -86,7 +88,6 @@ public class TheftService extends Service {
                 .build();
         startForeground(1, notification);
 
-        // FAILLE 4 : Gérer l'arrêt local en cas de mode avol
         if (intent != null && intent.getAction() != null) {
             if (intent.getAction().equals("START_THEFT")) {
                 triggerAlarmAndGPS();
@@ -116,6 +117,13 @@ public class TheftService extends Service {
     private void triggerAlarmAndGPS() {
         if (isTheftActive) return;
         isTheftActive = true;
+
+        // FAILLE 3 : Allumer l'écran du téléphone (WakeLock)
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "MYSAFELEX::AlarmWakeLock");
+            wakeLock.acquire(10*60*1000L); // 10 minutes
+        }
 
         CameraHelper.takeSecretPhoto(this, deviceId);
 
@@ -169,7 +177,6 @@ public class TheftService extends Service {
         };
         volumeHandler.post(volumeRunnable);
 
-        // FAILLE 5 : Sécuriser le lancement du GPS pour éviter le crash
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000)
                     .setMinUpdateIntervalMillis(10000)
@@ -191,6 +198,9 @@ public class TheftService extends Service {
         if (ringtone != null && ringtone.isPlaying()) {
             ringtone.stop();
             ringtone = null;
+        }
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
         }
         fusedLocationClient.removeLocationUpdates(locationCallback);
     }
