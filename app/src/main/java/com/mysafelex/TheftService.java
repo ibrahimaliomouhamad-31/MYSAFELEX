@@ -1,119 +1,18 @@
-package com.mysafelex;
-
-import android.Manifest;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
-import android.app.admin.DevicePolicyManager;
-import android.content.ComponentName;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.media.AudioAttributes;
-import android.media.AudioManager;
-import android.media.Ringtone;
-import android.media.RingtoneManager;
-import android.net.Uri;
-import android.os.Build;
-import android.os.IBinder;
-import android.os.Looper;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.core.app.NotificationCompat;
-import androidx.core.content.ContextCompat;
-import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationResult;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.Priority;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.EventListener;
-import com.google.firebase.firestore.FirebaseFirestoreException;
-
-public class TheftService extends Service {
-
-    private Ringtone ringtone;
-    private FirebaseFirestore db;
-    private String deviceId;
-    private FusedLocationProviderClient fusedLocationClient;
-    private LocationCallback locationCallback;
-    
-    // LE VERROU ANTI-BOUCLE
-    private boolean isTheftActive = false;
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    "lex_channel", "MYSAFELEX", NotificationManager.IMPORTANCE_HIGH);
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) manager.createNotificationChannel(channel);
-        }
-        db = FirebaseFirestore.getInstance();
-        
-        SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
-        deviceId = prefs.getString("matricule", "unknown_device");
-
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        locationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(@NonNull LocationResult locationResult) {
-                for (android.location.Location location : locationResult.getLocations()) {
-                    db.collection("devices").document(deviceId)
-                            .update("lat", location.getLatitude(), "lng", location.getLongitude());
-                }
-            }
-        };
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        Notification notification = new NotificationCompat.Builder(this, "lex_channel")
-                .setContentTitle("Synchronisation...")
-                .setContentText("Services système en cours.")
-                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-                .build();
-        startForeground(1, notification);
-
-        if (intent != null && intent.getAction() != null && intent.getAction().equals("START_THEFT")) {
-            triggerAlarmAndGPS();
-        }
-
-        db.collection("devices").document(deviceId)
-                .addSnapshotListener(new EventListener<DocumentSnapshot>() {
-                    @Override
-                    public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
-                        if (e != null || snapshot == null || !snapshot.exists()) return;
-                        String status = snapshot.getString("status");
-                        if (status != null && status.equals("vole")) {
-                            triggerAlarmAndGPS();
-                        } else if (status != null && status.equals("securise")) {
-                            stopAlarmAndGPS();
-                        }
-                    }
-                });
-
-        return START_STICKY;
-    }
-
     private void triggerAlarmAndGPS() {
-        // SI L'ALARME SONNE DÉJÀ, ON NE FAIT RIEN (Anti-boucle)
         if (isTheftActive) return;
         isTheftActive = true;
 
+        // 1. PRENDRE LA PHOTO EN PREMIER (avant que l'écran ne se verrouille !)
         CameraHelper.takeSecretPhoto(this, deviceId);
 
+        // 2. VERROUILLER L'ÉCRAN ENSUITE
         DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
         if (dpm != null && dpm.isAdminActive(adminComponent)) {
             dpm.lockNow();
         }
 
+        // 3. DÉCLENCHER L'ALARME
         if (ringtone == null) {
             try {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -140,6 +39,7 @@ public class TheftService extends Service {
             }
         }
 
+        // 4. DÉMARRER LE GPS
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
                     .setMinUpdateIntervalMillis(2000)
@@ -148,25 +48,3 @@ public class TheftService extends Service {
             fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
         }
     }
-
-    private void stopAlarmAndGPS() {
-        // ON REMET LE VERROU À ZÉRO
-        isTheftActive = false;
-
-        if (ringtone != null && ringtone.isPlaying()) {
-            ringtone.stop();
-            ringtone = null;
-        }
-        fusedLocationClient.removeLocationUpdates(locationCallback);
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        stopAlarmAndGPS();
-    }
-
-    @Nullable
-    @Override
-    public IBinder onBind(Intent intent) { return null; }
-}
