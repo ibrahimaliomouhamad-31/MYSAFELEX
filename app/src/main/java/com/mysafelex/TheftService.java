@@ -57,7 +57,7 @@ public class TheftService extends Service implements LocationListener {
             triggerAlarmAndGPS();
         }
 
-        // On garde l'écoute Firebase au cas où l'app est ouverte
+        // On garde l'écoute Firebase
         db.collection("devices").document(deviceId)
                 .addSnapshotListener(new EventListener<DocumentSnapshot>() {
                     @Override
@@ -72,6 +72,7 @@ public class TheftService extends Service implements LocationListener {
                     }
                 });
 
+        // ON A RETIRÉ LE CODE ZOMBIE ICI. C'est sécurisé maintenant.
         return START_STICKY;
     }
 
