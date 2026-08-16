@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toast.makeText(this, "VERSION 3.0", Toast.LENGTH_LONG).show();
+
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
 
         editMatricule = findViewById(R.id.editMatricule);
@@ -37,14 +37,10 @@ public class MainActivity extends AppCompatActivity {
         btnLogin = findViewById(R.id.btnLogin);
         txtToken = findViewById(R.id.txtToken);
 
-        // VÉRIFICATION : L'élève a-t-il déjà mis le cadenas ?
         boolean isLocked = prefs.getBoolean("is_app_locked", false);
-
         if (!isLocked) {
-            // NON ! On bloque l'application et on affiche le portail obligatoire.
             showMandatoryLockGuide();
         } else {
-            // OUI ! L'élève est sérieux, on lance l'application normalement.
             startAppSystems();
         }
     }
@@ -57,9 +53,8 @@ public class MainActivity extends AppCompatActivity {
                         "ÉTAPE 2 : Restez appuyé sur 'Bloc-note'.\n" +
                         "ÉTAPE 3 : Cliquez sur l'icône du Cadenas 🔒.\n\n" +
                         "Tant que vous n'aurez pas fait cela, l'application refusera de s'activer.")
-                .setCancelable(false) // Impossible de fermer sans cliquer
+                .setCancelable(false)
                 .setPositiveButton("J'ai mis le cadenas", (dialog, which) -> {
-                    // L'élève confirme. On l'enregistre pour ne plus lui demander.
                     prefs.edit().putBoolean("is_app_locked", true).apply();
                     Toast.makeText(this, "Merci ! L'application s'active.", Toast.LENGTH_SHORT).show();
                     startAppSystems();
@@ -102,6 +97,8 @@ public class MainActivity extends AppCompatActivity {
             if(matricule.isEmpty() || code.isEmpty()) {
                 Toast.makeText(this, "Veuillez remplir tous les champs", Toast.LENGTH_SHORT).show();
             } else {
+                // SAUVEGARDER LE MATRICULE DE L'ÉLÈVE POUR LE SERVICE
+                prefs.edit().putString("matricule", matricule).apply();
                 enableDeviceAdmin();
             }
         });
