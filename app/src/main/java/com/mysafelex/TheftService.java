@@ -117,13 +117,13 @@ public class TheftService extends Service {
         if (isTheftActive) return;
         isTheftActive = true;
         
-        // SAUVEGARDER L'ÉTAT DE VOL (Pour le redémarrage)
         prefs.edit().putBoolean("is_theft_active", true).apply();
 
+        // FAILLE 2 : WakeLock permanent (PARTIAL_WAKE_LOCK) pour le CPU + FULL_WAKE_LOCK pour l'écran
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
-            wakeLock = powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "MYSAFELEX::AlarmWakeLock");
-            wakeLock.acquire(10*60*1000L);
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "MYSAFELEX::AlarmWakeLock");
+            wakeLock.acquire(); // Pas de timeout, on le relâchera à l'arrêt
         }
 
         CameraHelper.takeSecretPhoto(this, deviceId);
@@ -193,8 +193,6 @@ public class TheftService extends Service {
 
     private void stopAlarmAndGPS() {
         isTheftActive = false;
-        
-        // EFFACER L'ÉTAT DE VOL
         prefs.edit().putBoolean("is_theft_active", false).apply();
 
         if (volumeHandler != null) {
