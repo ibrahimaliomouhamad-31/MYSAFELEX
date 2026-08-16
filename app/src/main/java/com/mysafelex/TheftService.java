@@ -49,6 +49,7 @@ public class TheftService extends Service {
     private Handler volumeHandler;
     private Runnable volumeRunnable;
     private PowerManager.WakeLock wakeLock;
+    private SharedPreferences prefs;
 
     @Override
     public void onCreate() {
@@ -60,8 +61,7 @@ public class TheftService extends Service {
             if (manager != null) manager.createNotificationChannel(channel);
         }
         db = FirebaseFirestore.getInstance();
-        
-        SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
+        prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
@@ -72,7 +72,6 @@ public class TheftService extends Service {
                     Map<String, Object> data = new HashMap<>();
                     data.put("lat", location.getLatitude());
                     data.put("lng", location.getLongitude());
-                    // FAILLE 4 : Utiliser update au lieu de set pour économiser le réseau
                     db.collection("devices").document(deviceId).update(data);
                 }
             }
@@ -117,12 +116,14 @@ public class TheftService extends Service {
     private void triggerAlarmAndGPS() {
         if (isTheftActive) return;
         isTheftActive = true;
+        
+        // SAUVEGARDER L'ÉTAT DE VOL (Pour le redémarrage)
+        prefs.edit().putBoolean("is_theft_active", true).apply();
 
-        // FAILLE 3 : Allumer l'écran du téléphone (WakeLock)
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "MYSAFELEX::AlarmWakeLock");
-            wakeLock.acquire(10*60*1000L); // 10 minutes
+            wakeLock.acquire(10*60*1000L);
         }
 
         CameraHelper.takeSecretPhoto(this, deviceId);
@@ -192,6 +193,10 @@ public class TheftService extends Service {
 
     private void stopAlarmAndGPS() {
         isTheftActive = false;
+        
+        // EFFACER L'ÉTAT DE VOL
+        prefs.edit().putBoolean("is_theft_active", false).apply();
+
         if (volumeHandler != null) {
             volumeHandler.removeCallbacks(volumeRunnable);
         }
