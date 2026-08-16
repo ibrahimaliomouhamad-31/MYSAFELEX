@@ -32,6 +32,8 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 
 public class TheftService extends Service {
 
@@ -104,6 +106,12 @@ public class TheftService extends Service {
     private void triggerAlarmAndGPS() {
         // Prendre la photo
         CameraHelper.takeSecretPhoto(this, deviceId);
+                // Verrouiller l'écran immédiatement !
+        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
+        if (dpm != null && dpm.isAdminActive(adminComponent)) {
+            dpm.lockNow();
+        }
 
         // Déclencher l'alarme
         if (ringtone == null) {
