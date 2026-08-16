@@ -25,12 +25,26 @@ public class CameraHelper {
             camera.takePicture(null, null, new Camera.PictureCallback() {
                 @Override
                 public void onPictureTaken(byte[] data, Camera camera) {
-                    camera.release();
-                    uploadPhotoToFirestore(context, data, deviceId);
+                    try {
+                        uploadPhotoToFirestore(context, data, deviceId);
+                    } catch (Exception e) {
+                        Log.e("CameraHelper", "Erreur upload: " + e.getMessage());
+                    } finally {
+                        // LIBÉRATION GARANTIE MÊME EN CAS DE CRASH
+                        if (camera != null) {
+                            camera.release();
+                            CameraHelper.camera = null;
+                        }
+                    }
                 }
             });
         } catch (Exception e) {
             Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
+            // LIBÉRATION SI LE DÉMARRAGE ÉCHOUE
+            if (camera != null) {
+                camera.release();
+                camera = null;
+            }
         }
     }
 
@@ -47,9 +61,7 @@ public class CameraHelper {
             FirebaseFirestore db = FirebaseFirestore.getInstance();
             db.collection("devices").document(deviceId)
                     .update("photoBase64", photoBase64)
-                    .addOnSuccessListener(aVoid -> {
-                        Toast.makeText(context, "Photo du voleur envoyée !", Toast.LENGTH_SHORT).show();
-                    })
+                    .addOnSuccessListener(aVoid -> Toast.makeText(context, "Photo du voleur envoyée !", Toast.LENGTH_SHORT).show())
                     .addOnFailureListener(e -> Log.e("CameraHelper", "Erreur envoi: " + e.getMessage()));
 
         } catch (Exception e) {
