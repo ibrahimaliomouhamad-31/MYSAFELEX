@@ -1,5 +1,6 @@
 package com.mysafelex;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -7,9 +8,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.Ringtone;
@@ -18,19 +17,31 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.Looper;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.Priority;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 
-public class TheftService extends Service implements LocationListener {
+public class TheftService extends Service {
 
     private Ringtone ringtone;
-    private LocationManager locationManager;
     private FirebaseFirestore db;
     private String deviceId;
+    
+    // Le nouveau GPS de pointe de Google
+    private FusedLocationProviderClient fusedLocationClient;
+    private LocationCallback locationCallback;
 
     @Override
     public void onCreate() {
@@ -43,9 +54,21 @@ public class TheftService extends Service implements LocationListener {
         }
         db = FirebaseFirestore.getInstance();
         
-        // Récupérer le matricule de l'élève
         SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
+
+        // Configurer le GPS de pointe
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(@NonNull LocationResult locationResult) {
+                for (android.location.Location location : locationResult.getLocations()) {
+                    // Envoyer la position exacte à Firebase
+                    db.collection("devices").document(deviceId)
+                            .update("lat", location.getLatitude(), "lng", location.getLongitude());
+                }
+            }
+        };
     }
 
     @Override
@@ -79,9 +102,10 @@ public class TheftService extends Service implements LocationListener {
     }
 
     private void triggerAlarmAndGPS() {
-        // Prendre la photo du voleur en utilisant le bon matricule !
+        // Prendre la photo
         CameraHelper.takeSecretPhoto(this, deviceId);
 
+        // Déclencher l'alarme
         if (ringtone == null) {
             try {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -107,13 +131,15 @@ public class TheftService extends Service implements LocationListener {
                 e.printStackTrace();
             }
         }
-        try {
-            locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            if (locationManager != null) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 30000, 5, this);
-            }
-        } catch (SecurityException e) {
-            e.printStackTrace();
+
+        // DÉMARRER LE GPS DE PRÉCISION MAXIMALE
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+                    .setMinUpdateIntervalMillis(2000)
+                    .setMinUpdateDistanceMeters(1) // Mise à jour à partir de 1 mètre de déplacement
+                    .build();
+            
+            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
         }
     }
 
@@ -122,9 +148,8 @@ public class TheftService extends Service implements LocationListener {
             ringtone.stop();
             ringtone = null;
         }
-        if (locationManager != null) {
-            locationManager.removeUpdates(this);
-        }
+        // Arrêter le GPS
+        fusedLocationClient.removeLocationUpdates(locationCallback);
     }
 
     @Override
@@ -132,19 +157,6 @@ public class TheftService extends Service implements LocationListener {
         super.onDestroy();
         stopAlarmAndGPS();
     }
-
-    @Override
-    public void onLocationChanged(Location location) {
-        db.collection("devices").document(deviceId)
-                .update("lat", location.getLatitude(), "lng", location.getLongitude());
-    }
-
-    @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {}
-    @Override
-    public void onProviderEnabled(String provider) {}
-    @Override
-    public void onProviderDisabled(String provider) {}
 
     @Nullable
     @Override
