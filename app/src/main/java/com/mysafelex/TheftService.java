@@ -34,8 +34,9 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
-import androidx.core.app.ActivityCompat;
-import android.Manifest;
+import com.google.firebase.firestore.SetOptions;
+import java.util.HashMap;
+import java.util.Map;
 
 public class TheftService extends Service {
 
@@ -45,8 +46,6 @@ public class TheftService extends Service {
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private boolean isTheftActive = false;
-
-    // LE GARDIEN DU VOLUME
     private Handler volumeHandler;
     private Runnable volumeRunnable;
 
@@ -69,8 +68,11 @@ public class TheftService extends Service {
             @Override
             public void onLocationResult(@NonNull LocationResult locationResult) {
                 for (android.location.Location location : locationResult.getLocations()) {
-                    db.collection("devices").document(deviceId)
-                            .update("lat", location.getLatitude(), "lng", location.getLongitude());
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("lat", location.getLatitude());
+                    data.put("lng", location.getLongitude());
+                    // FAILLE 6 : Utilisation de merge pour éviter d'écraser la photo
+                    db.collection("devices").document(deviceId).set(data, SetOptions.merge());
                 }
             }
         };
@@ -113,12 +115,14 @@ public class TheftService extends Service {
         // 1. Prendre la photo
         CameraHelper.takeSecretPhoto(this, deviceId);
 
-        // 2. Verrouiller l'écran
-        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-        ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
-        if (dpm != null && dpm.isAdminActive(adminComponent)) {
-            dpm.lockNow();
-        }
+        // 2. Verrouiller l'écran (Délai de 500ms pour laisser la caméra s'éteindre proprement - Faille 8)
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+            ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
+            if (dpm != null && dpm.isAdminActive(adminComponent)) {
+                dpm.lockNow();
+            }
+        }, 500);
 
         // 3. Déclencher l'alarme
         if (ringtone == null) {
@@ -147,7 +151,7 @@ public class TheftService extends Service {
             }
         }
 
-        // 4. ACTIVER LE GARDIEN DU VOLUME (Contre-attaque)
+        // 4. Gardien du volume
         volumeHandler = new Handler(Looper.getMainLooper());
         volumeRunnable = new Runnable() {
             @Override
@@ -155,11 +159,9 @@ public class TheftService extends Service {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
                 if (audioManager != null && isTheftActive) {
                     int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
-                    // Si le voleur a baissé le volume, on le remet à fond immédiatement !
                     if (audioManager.getStreamVolume(AudioManager.STREAM_ALARM) < maxVol) {
                         audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0);
                     }
-                    // Revérifier dans 1 seconde
                     volumeHandler.postDelayed(this, 1000);
                 }
             }
@@ -178,12 +180,9 @@ public class TheftService extends Service {
 
     private void stopAlarmAndGPS() {
         isTheftActive = false;
-
-        // Arrêter le Gardien du Volume
         if (volumeHandler != null) {
             volumeHandler.removeCallbacks(volumeRunnable);
         }
-
         if (ringtone != null && ringtone.isPlaying()) {
             ringtone.stop();
             ringtone = null;
