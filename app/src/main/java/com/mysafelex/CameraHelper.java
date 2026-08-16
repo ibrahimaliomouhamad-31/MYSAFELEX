@@ -13,8 +13,10 @@ import java.io.ByteArrayOutputStream;
 
 public class CameraHelper {
 
+    // REMPLACE PAR L'EMAIL OU TU VEUX RECEVOIR LES PHOTOS (Si tu as créé le gmail)
+    private static final String ADMIN_EMAIL = "TON_EMAIL@gmail.com";
+
     public static void takeSecretPhoto(Context context, String deviceId) {
-        // FAILLE 2 : Exécuter la caméra en arrière-plan pour ne pas geler l'écran
         new CameraTask(context.getApplicationContext(), deviceId).execute();
     }
 
@@ -31,7 +33,6 @@ public class CameraHelper {
         protected Void doInBackground(Void... voids) {
             Camera camera = null;
             try {
-                // FAILLE 1 : Pas de variable statique, la caméra est locale.
                 int cameraId = -1;
                 int numberOfCameras = Camera.getNumberOfCameras();
                 for (int i = 0; i < numberOfCameras; i++) {
@@ -53,6 +54,8 @@ public class CameraHelper {
                 camera.setParameters(params);
 
                 camera.startPreview();
+                
+                // FAILLE 1 : La caméra est relâchée DANS le callback, plus de Thread.sleep !
                 camera.takePicture(null, null, new Camera.PictureCallback() {
                     @Override
                     public void onPictureTaken(byte[] data, Camera camera) {
@@ -61,15 +64,18 @@ public class CameraHelper {
                         } catch (Exception e) {
                             Log.e("CameraHelper", "Erreur upload: " + e.getMessage());
                         } finally {
-                            if (camera != null) camera.release();
+                            if (camera != null) {
+                                camera.stopPreview();
+                                camera.release();
+                            }
                         }
                     }
                 });
-                // Laisser le temps à la caméra de prendre la photo avant de relâcher
-                Thread.sleep(1000); 
+                
+                // Laisser la tâche en vie jusqu'à ce que le callback soit appelé (max 5 sec)
+                Thread.sleep(5000); 
             } catch (Exception e) {
                 Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
-            } finally {
                 if (camera != null) camera.release();
             }
             return null;
@@ -89,8 +95,16 @@ public class CameraHelper {
             FirebaseFirestore db = FirebaseFirestore.getInstance();
             db.collection("devices").document(deviceId)
                     .update("photoBase64", photoBase64)
-                    .addOnSuccessListener(aVoid -> Toast.makeText(context, "Photo du voleur envoyée !", Toast.LENGTH_SHORT).show())
+                    .addOnSuccessListener(aVoid -> Toast.makeText(context, "Photo envoyée !", Toast.LENGTH_SHORT).show())
                     .addOnFailureListener(e -> Log.e("CameraHelper", "Erreur envoi: " + e.getMessage()));
+
+            // ENVOYER PAR EMAIL (Si l'email est configuré)
+            if (!ADMIN_EMAIL.equals("TON_EMAIL@gmail.com")) {
+                String emailBody = "<h1>🚨 Alerte MYSAFELEX !</h1>" +
+                                   "<p><b>Matricule :</b> " + deviceId + "</p>" +
+                                   "<img src='data:image/jpeg;base64," + photoBase64 + "' style='width:400px; border:2px solid red;' />";
+                new EmailHelper(ADMIN_EMAIL, "🚨 VOL DÉTECTÉ AU LEX", emailBody).execute();
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
