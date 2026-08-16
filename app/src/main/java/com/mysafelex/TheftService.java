@@ -5,6 +5,8 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -15,7 +17,6 @@ import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Looper;
 import androidx.annotation.NonNull;
@@ -32,18 +33,17 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
-import android.app.admin.DevicePolicyManager;
-import android.content.ComponentName;
 
 public class TheftService extends Service {
 
     private Ringtone ringtone;
     private FirebaseFirestore db;
     private String deviceId;
-    
-    // Le nouveau GPS de pointe de Google
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
+    
+    // LE VERROU ANTI-BOUCLE
+    private boolean isTheftActive = false;
 
     @Override
     public void onCreate() {
@@ -59,13 +59,11 @@ public class TheftService extends Service {
         SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
 
-        // Configurer le GPS de pointe
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         locationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(@NonNull LocationResult locationResult) {
                 for (android.location.Location location : locationResult.getLocations()) {
-                    // Envoyer la position exacte à Firebase
                     db.collection("devices").document(deviceId)
                             .update("lat", location.getLatitude(), "lng", location.getLongitude());
                 }
@@ -104,16 +102,18 @@ public class TheftService extends Service {
     }
 
     private void triggerAlarmAndGPS() {
-        // Prendre la photo
+        // SI L'ALARME SONNE DÉJÀ, ON NE FAIT RIEN (Anti-boucle)
+        if (isTheftActive) return;
+        isTheftActive = true;
+
         CameraHelper.takeSecretPhoto(this, deviceId);
-                // Verrouiller l'écran immédiatement !
+
         DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
         if (dpm != null && dpm.isAdminActive(adminComponent)) {
             dpm.lockNow();
         }
 
-        // Déclencher l'alarme
         if (ringtone == null) {
             try {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -140,23 +140,23 @@ public class TheftService extends Service {
             }
         }
 
-        // DÉMARRER LE GPS DE PRÉCISION MAXIMALE
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
                     .setMinUpdateIntervalMillis(2000)
-                    .setMinUpdateDistanceMeters(1) // Mise à jour à partir de 1 mètre de déplacement
+                    .setMinUpdateDistanceMeters(1)
                     .build();
-            
             fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
         }
     }
 
     private void stopAlarmAndGPS() {
+        // ON REMET LE VERROU À ZÉRO
+        isTheftActive = false;
+
         if (ringtone != null && ringtone.isPlaying()) {
             ringtone.stop();
             ringtone = null;
         }
-        // Arrêter le GPS
         fusedLocationClient.removeLocationUpdates(locationCallback);
     }
 
