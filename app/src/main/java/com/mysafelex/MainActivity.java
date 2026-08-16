@@ -15,7 +15,10 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.messaging.FirebaseMessaging;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -24,6 +27,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView txtToken;
     private static final int REQUEST_CODE_ENABLE_ADMIN = 1;
     private SharedPreferences prefs;
+    private FirebaseFirestore db;
+    private String currentToken = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
+        db = FirebaseFirestore.getInstance();
 
         editMatricule = findViewById(R.id.editMatricule);
         editCode = findViewById(R.id.editInviteCode);
@@ -63,7 +69,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startAppSystems() {
-        // Demander l'optimisation batterie
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
@@ -71,7 +76,6 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         }
 
-        // Démarrer la surveillance
         Intent serviceIntent = new Intent(this, TheftService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
@@ -79,15 +83,14 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
 
-        // Afficher le Token
         FirebaseMessaging.getInstance().getToken()
                 .addOnCompleteListener(task -> {
                     if (!task.isSuccessful()) {
                         txtToken.setText("Erreur de token");
                         return;
                     }
-                    String token = task.getResult();
-                    txtToken.setText("Token: " + token);
+                    currentToken = task.getResult();
+                    txtToken.setText("Token: " + currentToken);
                 });
 
         btnLogin.setOnClickListener(v -> {
@@ -97,11 +100,28 @@ public class MainActivity extends AppCompatActivity {
             if(matricule.isEmpty() || code.isEmpty()) {
                 Toast.makeText(this, "Veuillez remplir tous les champs", Toast.LENGTH_SHORT).show();
             } else {
-                // SAUVEGARDER LE MATRICULE DE L'ÉLÈVE POUR LE SERVICE
-                prefs.edit().putString("matricule", matricule).apply();
+                // Sauvegarder les infos
+                prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
                 enableDeviceAdmin();
+                
+                // INSCRIRE L'ÉLÈVE DANS LA BASE DE DONNÉES
+                registerStudentInDatabase(matricule);
             }
         });
+    }
+
+    private void registerStudentInDatabase(String matricule) {
+        Map<String, Object> studentData = new HashMap<>();
+        studentData.put("status", "securise");
+        studentData.put("lat", null);
+        studentData.put("lng", null);
+        studentData.put("photoBase64", null);
+        studentData.put("token", currentToken);
+
+        db.collection("devices").document(matricule)
+                .set(studentData)
+                .addOnSuccessListener(aVoid -> Toast.makeText(this, "Inscription réussie ! Vous êtes protégé.", Toast.LENGTH_SHORT).show())
+                .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'inscription.", Toast.LENGTH_SHORT).show());
     }
 
     private void enableDeviceAdmin() {
