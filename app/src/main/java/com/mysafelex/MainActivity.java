@@ -44,11 +44,10 @@ public class MainActivity extends AppCompatActivity {
         btnLogin = findViewById(R.id.btnLogin);
         txtToken = findViewById(R.id.txtToken);
 
-        // Si l'élève est déjà inscrit, on pré-remplit son matricule
         currentMatricule = prefs.getString("matricule", "");
         if (!currentMatricule.isEmpty()) {
             editMatricule.setText(currentMatricule);
-            editMatricule.setEnabled(false); // Il ne peut plus le changer
+            editMatricule.setEnabled(false);
         }
 
         boolean isLocked = prefs.getBoolean("is_app_locked", false);
@@ -91,16 +90,29 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
 
+        // DÉSACTIVER LE BOUTON PENDANT QU'ON CHERCHE LE TOKEN
+        btnLogin.setEnabled(false);
+        btnLogin.setText("Initialisation sécurité...");
+
         if (currentToken.isEmpty()) {
             FirebaseMessaging.getInstance().getToken()
                     .addOnCompleteListener(task -> {
                         if (!task.isSuccessful()) {
-                            txtToken.setText("Erreur de token");
+                            txtToken.setText("Erreur de token. Redémarrez l'app.");
+                            btnLogin.setText("Réessayer");
+                            btnLogin.setEnabled(true);
                             return;
                         }
                         currentToken = task.getResult();
                         txtToken.setText("Token: " + currentToken);
+                        
+                        // RÉACTIVER LE BOUTON UNE FOIS LE TOKEN OBTENU
+                        btnLogin.setEnabled(true);
+                        btnLogin.setText("SAUVEGARDER");
                     });
+        } else {
+            btnLogin.setEnabled(true);
+            btnLogin.setText("SAUVEGARDER");
         }
 
         btnLogin.setOnClickListener(v -> {
@@ -112,14 +124,17 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // VÉRIFIER SI C'EST LE CODE POUR ARRÊTER L'ALARME
             String savedPin = prefs.getString("pin_code", "");
             if (!savedPin.isEmpty() && code.equals(savedPin)) {
                 stopTheftRemotely(matricule);
                 return;
             }
 
-            // SINON, C'EST UNE NOUVELLE INSCRIPTION
+            if (currentToken.isEmpty()) {
+                Toast.makeText(this, "Erreur: Token non initialisé.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
             currentMatricule = matricule;
             enableDeviceAdmin();
@@ -132,7 +147,7 @@ public class MainActivity extends AppCompatActivity {
                 .update("status", "securise")
                 .addOnSuccessListener(aVoid -> {
                     Toast.makeText(this, "Alarme arrêtée !", Toast.LENGTH_SHORT).show();
-                    editCode.setText(""); // Vider la case
+                    editCode.setText("");
                 })
                 .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'arrêt.", Toast.LENGTH_SHORT).show());
     }
@@ -149,7 +164,7 @@ public class MainActivity extends AppCompatActivity {
                 .set(studentData)
                 .addOnSuccessListener(aVoid -> {
                     Toast.makeText(this, "Inscription réussie ! Vous êtes protégé.", Toast.LENGTH_SHORT).show();
-                    editMatricule.setEnabled(false); // Bloquer le matricule
+                    editMatricule.setEnabled(false);
                 })
                 .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'inscription.", Toast.LENGTH_SHORT).show());
     }
