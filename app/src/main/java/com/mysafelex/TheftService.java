@@ -71,7 +71,6 @@ public class TheftService extends Service {
                     Map<String, Object> data = new HashMap<>();
                     data.put("lat", location.getLatitude());
                     data.put("lng", location.getLongitude());
-                    // FAILLE 6 : Utilisation de merge pour éviter d'écraser la photo
                     db.collection("devices").document(deviceId).set(data, SetOptions.merge());
                 }
             }
@@ -112,10 +111,8 @@ public class TheftService extends Service {
         if (isTheftActive) return;
         isTheftActive = true;
 
-        // 1. Prendre la photo
         CameraHelper.takeSecretPhoto(this, deviceId);
 
-        // 2. Verrouiller l'écran (Délai de 500ms pour laisser la caméra s'éteindre proprement - Faille 8)
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
             ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
@@ -124,7 +121,6 @@ public class TheftService extends Service {
             }
         }, 500);
 
-        // 3. Déclencher l'alarme
         if (ringtone == null) {
             try {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -151,7 +147,6 @@ public class TheftService extends Service {
             }
         }
 
-        // 4. Gardien du volume
         volumeHandler = new Handler(Looper.getMainLooper());
         volumeRunnable = new Runnable() {
             @Override
@@ -168,11 +163,11 @@ public class TheftService extends Service {
         };
         volumeHandler.post(volumeRunnable);
 
-        // 5. Démarrer le GPS
+        // FAILLE 7 : Réduire la fréquence du GPS pour économiser la batterie (15 secondes au lieu de 2)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
-                    .setMinUpdateIntervalMillis(2000)
-                    .setMinUpdateDistanceMeters(1)
+            LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000)
+                    .setMinUpdateIntervalMillis(10000)
+                    .setMinUpdateDistanceMeters(5)
                     .build();
             fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
         }
