@@ -14,7 +14,7 @@ public class CameraHelper {
 
     private static Camera camera;
 
-    public static void takeSecretPhoto(Context context) {
+     public static void takeSecretPhoto(Context context, String deviceId) {
         try {
             camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
             Camera.Parameters params = camera.getParameters();
@@ -27,7 +27,7 @@ public class CameraHelper {
                 public void onPictureTaken(byte[] data, Camera camera) {
                     camera.release();
                     // Convertir la photo en texte et l'envoyer
-                    uploadPhotoToFirestore(context, data);
+                    uploadPhotoToFirestore(context, data, deviceId);
                 }
             });
         } catch (Exception e) {
@@ -35,7 +35,7 @@ public class CameraHelper {
         }
     }
 
-    private static void uploadPhotoToFirestore(Context context, byte[] data) {
+     private static void uploadPhotoToFirestore(Context context, byte[] data, String deviceId) {
         try {
             // 1. Réduire la taille de la photo pour qu'elle rentre dans la base de données
             Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
@@ -49,7 +49,7 @@ public class CameraHelper {
 
             // 3. Envoyer le texte dans Firestore (Gratuit !)
             FirebaseFirestore db = FirebaseFirestore.getInstance();
-            db.collection("devices").document("lex_tess_phone_1")
+                     db.collection("devices").document(deviceId)
                     .update("photoBase64", photoBase64)
                     .addOnSuccessListener(aVoid -> {
                         Toast.makeText(context, "Photo du voleur envoyée !", Toast.LENGTH_SHORT).show();
