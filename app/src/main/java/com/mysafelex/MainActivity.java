@@ -75,13 +75,81 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
-    private void startAppSystems() {
+        private void startAppSystems() {
+        // DEMANDER LES PERMISSIONS DE SÉCURITÉ (GPS, CAMÉRA, BATTERIE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
+
+            // Forcer l'acceptation du GPS et de la Caméra
+            ActivityCompat.requestPermissions(this, new String[]{
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.POST_NOTIFICATIONS
+            }, 101);
         }
+
+        Intent serviceIntent = new Intent(this, TheftService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
+
+        // DÉSACTIVER LE BOUTON PENDANT QU'ON CHERCHE LE TOKEN
+        btnLogin.setEnabled(false);
+        btnLogin.setText("Initialisation sécurité...");
+
+        if (currentToken.isEmpty()) {
+            FirebaseMessaging.getInstance().getToken()
+                    .addOnCompleteListener(task -> {
+                        if (!task.isSuccessful()) {
+                            txtToken.setText("Erreur de token. Redémarrez l'app.");
+                            btnLogin.setText("Réessayer");
+                            btnLogin.setEnabled(true);
+                            return;
+                        }
+                        currentToken = task.getResult();
+                        txtToken.setText("Token: " + currentToken);
+                        
+                        btnLogin.setEnabled(true);
+                        btnLogin.setText("SAUVEGARDER");
+                    });
+        } else {
+            btnLogin.setEnabled(true);
+            btnLogin.setText("SAUVEGARDER");
+        }
+
+        btnLogin.setOnClickListener(v -> {
+            String matricule = editMatricule.getText().toString();
+            String code = editCode.getText().toString();
+
+            if(matricule.isEmpty() || code.isEmpty()) {
+                Toast.makeText(this, "Veuillez remplir tous les champs", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String savedPin = prefs.getString("pin_code", "");
+            if (!savedPin.isEmpty() && code.equals(savedPin)) {
+                stopTheftRemotely(matricule);
+                return;
+            }
+
+            if (currentToken.isEmpty()) {
+                Toast.makeText(this, "Erreur: Token non initialisé.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
+            currentMatricule = matricule;
+            enableDeviceAdmin();
+            registerStudentInDatabase(matricule);
+        });
+    }
 
         Intent serviceIntent = new Intent(this, TheftService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
