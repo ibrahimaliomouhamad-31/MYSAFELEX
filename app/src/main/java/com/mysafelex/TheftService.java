@@ -29,7 +29,8 @@ public class TheftService extends Service implements LocationListener {
     private Ringtone ringtone;
     private LocationManager locationManager;
     private FirebaseFirestore db;
-    private String deviceId = "lex_tess_phone_1";
+    private String deviceId
+    ;
 
     @Override
     public void onCreate() {
@@ -41,6 +42,8 @@ public class TheftService extends Service implements LocationListener {
             if (manager != null) manager.createNotificationChannel(channel);
         }
         db = FirebaseFirestore.getInstance();
+        SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
+        deviceId = prefs.getString("matricule", "unknown_device");
     }
 
     @Override
