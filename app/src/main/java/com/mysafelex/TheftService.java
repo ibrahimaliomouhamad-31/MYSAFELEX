@@ -86,8 +86,14 @@ public class TheftService extends Service {
                 .build();
         startForeground(1, notification);
 
-        if (intent != null && intent.getAction() != null && intent.getAction().equals("START_THEFT")) {
-            triggerAlarmAndGPS();
+        // FAILLE 4 : Gérer l'arrêt local en cas de mode avol
+        if (intent != null && intent.getAction() != null) {
+            if (intent.getAction().equals("START_THEFT")) {
+                triggerAlarmAndGPS();
+            } else if (intent.getAction().equals("STOP_THEFT")) {
+                stopAlarmAndGPS();
+                return START_NOT_STICKY;
+            }
         }
 
         db.collection("devices").document(deviceId)
@@ -163,13 +169,17 @@ public class TheftService extends Service {
         };
         volumeHandler.post(volumeRunnable);
 
-        // FAILLE 7 : Réduire la fréquence du GPS pour économiser la batterie (15 secondes au lieu de 2)
+        // FAILLE 5 : Sécuriser le lancement du GPS pour éviter le crash
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000)
                     .setMinUpdateIntervalMillis(10000)
                     .setMinUpdateDistanceMeters(5)
                     .build();
-            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+            try {
+                fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+            } catch (SecurityException e) {
+                e.printStackTrace();
+            }
         }
     }
 
