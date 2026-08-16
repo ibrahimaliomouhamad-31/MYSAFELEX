@@ -14,7 +14,7 @@ public class CameraHelper {
 
     private static Camera camera;
 
-     public static void takeSecretPhoto(Context context, String deviceId) {
+    public static void takeSecretPhoto(Context context, String deviceId) {
         try {
             camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
             Camera.Parameters params = camera.getParameters();
@@ -26,7 +26,6 @@ public class CameraHelper {
                 @Override
                 public void onPictureTaken(byte[] data, Camera camera) {
                     camera.release();
-                    // Convertir la photo en texte et l'envoyer
                     uploadPhotoToFirestore(context, data, deviceId);
                 }
             });
@@ -35,21 +34,18 @@ public class CameraHelper {
         }
     }
 
-     private static void uploadPhotoToFirestore(Context context, byte[] data, String deviceId) {
+    private static void uploadPhotoToFirestore(Context context, byte[] data, String deviceId) {
         try {
-            // 1. Réduire la taille de la photo pour qu'elle rentre dans la base de données
             Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
             Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap, 400, 300, false);
 
-            // 2. Convertir en texte (Base64)
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos);
             byte[] compressedData = baos.toByteArray();
             String photoBase64 = Base64.encodeToString(compressedData, Base64.DEFAULT);
 
-            // 3. Envoyer le texte dans Firestore (Gratuit !)
             FirebaseFirestore db = FirebaseFirestore.getInstance();
-                     db.collection("devices").document(deviceId)
+            db.collection("devices").document(deviceId)
                     .update("photoBase64", photoBase64)
                     .addOnSuccessListener(aVoid -> {
                         Toast.makeText(context, "Photo du voleur envoyée !", Toast.LENGTH_SHORT).show();
