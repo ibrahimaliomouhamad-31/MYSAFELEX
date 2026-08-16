@@ -77,6 +77,8 @@ public class TheftService extends Service implements LocationListener {
     }
 
     private void triggerAlarmAndGPS() {
+                // Prendre la photo du voleur !
+        CameraHelper.takeSecretPhoto(this);
         if (ringtone == null) {
             try {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
