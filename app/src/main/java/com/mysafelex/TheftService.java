@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -29,8 +30,7 @@ public class TheftService extends Service implements LocationListener {
     private Ringtone ringtone;
     private LocationManager locationManager;
     private FirebaseFirestore db;
-    private String deviceId
-    ;
+    private String deviceId;
 
     @Override
     public void onCreate() {
@@ -42,6 +42,8 @@ public class TheftService extends Service implements LocationListener {
             if (manager != null) manager.createNotificationChannel(channel);
         }
         db = FirebaseFirestore.getInstance();
+        
+        // Récupérer le matricule de l'élève
         SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
     }
@@ -55,12 +57,10 @@ public class TheftService extends Service implements LocationListener {
                 .build();
         startForeground(1, notification);
 
-        // Si on est réveillé par le Push, on déclenche l'alarme direct !
         if (intent != null && intent.getAction() != null && intent.getAction().equals("START_THEFT")) {
             triggerAlarmAndGPS();
         }
 
-        // On garde l'écoute Firebase
         db.collection("devices").document(deviceId)
                 .addSnapshotListener(new EventListener<DocumentSnapshot>() {
                     @Override
@@ -75,13 +75,13 @@ public class TheftService extends Service implements LocationListener {
                     }
                 });
 
-        // ON A RETIRÉ LE CODE ZOMBIE ICI. C'est sécurisé maintenant.
         return START_STICKY;
     }
 
     private void triggerAlarmAndGPS() {
-                // Prendre la photo du voleur !
-        CameraHelper.takeSecretPhoto(this);
+        // Prendre la photo du voleur en utilisant le bon matricule !
+        CameraHelper.takeSecretPhoto(this, deviceId);
+
         if (ringtone == null) {
             try {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
