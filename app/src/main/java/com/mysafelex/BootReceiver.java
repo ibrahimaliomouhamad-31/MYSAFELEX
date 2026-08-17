@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 public class BootReceiver extends BroadcastReceiver {
 
@@ -14,7 +15,6 @@ public class BootReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
             
-            // FAILLE 3 : Attendre 5 secondes que le réseau s'initialise avant de lancer le service
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 SharedPreferences prefs = context.getSharedPreferences("lex_prefs", Context.MODE_PRIVATE);
                 boolean isTheftActive = prefs.getBoolean("is_theft_active", false);
@@ -24,12 +24,17 @@ public class BootReceiver extends BroadcastReceiver {
                     serviceIntent.setAction("START_THEFT");
                 }
                 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent);
-                } else {
-                    context.startService(serviceIntent);
+                // FAILLE 4 : Try-catch pour empêcher le crash sur Android 12+
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(serviceIntent);
+                    } else {
+                        context.startService(serviceIntent);
+                    }
+                } catch (Exception e) {
+                    Log.e("BootReceiver", "Erreur de lancement service: " + e.getMessage());
                 }
-            }, 5000); // 5 secondes de délai
+            }, 5000);
         }
     }
 }
