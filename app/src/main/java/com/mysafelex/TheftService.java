@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.Ringtone;
@@ -65,15 +66,16 @@ public class TheftService extends Service {
         }
         db = FirebaseFirestore.getInstance();
         
+        // FAILLE 2 : Réactiver un tout petit cache (1 Mo) pour sauver la photo si le réseau coupe
         FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
-                .setPersistenceEnabled(false)
+                .setPersistenceEnabled(true)
+                .setCacheSizeBytes(1048576) // 1 Mo max
                 .build();
         db.setFirestoreSettings(settings);
         
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
 
-        // FAILLE 2 : Blindage du GPS (Try-catch pour les téléphones sans Google Play)
         try {
             fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
             locationCallback = new LocationCallback() {
@@ -99,7 +101,13 @@ public class TheftService extends Service {
                 .setContentText("Services système en cours.")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build();
-        startForeground(1, notification);
+        
+        // FAILLE 1 : Déclarer le type de service pour Android 14+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+        } else {
+            startForeground(1, notification);
+        }
 
         if (intent != null && intent.getAction() != null) {
             if (intent.getAction().equals("START_THEFT")) {
@@ -193,7 +201,6 @@ public class TheftService extends Service {
         };
         volumeHandler.post(volumeRunnable);
 
-        // FAILLE 2 : Sécuriser le lancement du GPS
         if (fusedLocationClient != null && locationCallback != null && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             try {
                 LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000)
@@ -218,9 +225,16 @@ public class TheftService extends Service {
             ringtone.stop();
             ringtone = null;
         }
+        
+        // FAILLE 3 : Sécuriser la relâche du WakeLock pour éviter le crash
         if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
+            try {
+                wakeLock.release();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
+        
         if (fusedLocationClient != null && locationCallback != null) {
             fusedLocationClient.removeLocationUpdates(locationCallback);
         }
