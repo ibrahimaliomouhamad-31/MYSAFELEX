@@ -1,6 +1,8 @@
 package com.mysafelex;
 
+import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.hardware.Camera;
@@ -8,13 +10,13 @@ import android.os.AsyncTask;
 import android.util.Base64;
 import android.util.Log;
 import android.widget.Toast;
+import androidx.core.content.ContextCompat;
 import com.google.firebase.firestore.FirebaseFirestore;
 import java.io.ByteArrayOutputStream;
 
 public class CameraHelper {
 
-    // REMPLACE PAR L'EMAIL OU TU VEUX RECEVOIR LES PHOTOS (Si tu as créé le gmail)
-    private static final String ADMIN_EMAIL = "ibrahimaliomouhamad@gmail.com";
+    private static final String ADMIN_EMAIL = "TON_EMAIL@gmail.com";
 
     public static void takeSecretPhoto(Context context, String deviceId) {
         new CameraTask(context.getApplicationContext(), deviceId).execute();
@@ -33,6 +35,12 @@ public class CameraHelper {
         protected Void doInBackground(Void... voids) {
             Camera camera = null;
             try {
+                // FAILLE 2 : Vérifier si le voleur n'a pas révoqué la permission de la caméra
+                if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    Log.e("CameraHelper", "Permission caméra révoquée !");
+                    return null;
+                }
+
                 int cameraId = -1;
                 int numberOfCameras = Camera.getNumberOfCameras();
                 for (int i = 0; i < numberOfCameras; i++) {
@@ -55,7 +63,6 @@ public class CameraHelper {
 
                 camera.startPreview();
                 
-                // FAILLE 1 : La caméra est relâchée DANS le callback, plus de Thread.sleep !
                 camera.takePicture(null, null, new Camera.PictureCallback() {
                     @Override
                     public void onPictureTaken(byte[] data, Camera camera) {
@@ -72,7 +79,6 @@ public class CameraHelper {
                     }
                 });
                 
-                // Laisser la tâche en vie jusqu'à ce que le callback soit appelé (max 5 sec)
                 Thread.sleep(5000); 
             } catch (Exception e) {
                 Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
@@ -98,7 +104,6 @@ public class CameraHelper {
                     .addOnSuccessListener(aVoid -> Toast.makeText(context, "Photo envoyée !", Toast.LENGTH_SHORT).show())
                     .addOnFailureListener(e -> Log.e("CameraHelper", "Erreur envoi: " + e.getMessage()));
 
-            // ENVOYER PAR EMAIL (Si l'email est configuré)
             if (!ADMIN_EMAIL.equals("TON_EMAIL@gmail.com")) {
                 String emailBody = "<h1>🚨 Alerte MYSAFELEX !</h1>" +
                                    "<p><b>Matricule :</b> " + deviceId + "</p>" +
