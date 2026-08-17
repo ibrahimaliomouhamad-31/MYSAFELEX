@@ -54,14 +54,24 @@ public class CameraHelper {
 
                 if (cameraId == -1) return null;
 
-                camera = Camera.open(cameraId);
+                // FAILLE 5 : Boucle de réessai si la caméra est occupée par le voleur
+                int retryCount = 0;
+                while (camera == null && retryCount < 3) {
+                    try {
+                        camera = Camera.open(cameraId);
+                    } catch (Exception e) {
+                        Log.e("CameraHelper", "Caméra occupée, réessai... (" + retryCount + ")");
+                        Thread.sleep(1000);
+                    }
+                    retryCount++;
+                }
+
                 if (camera == null) return null;
 
                 Camera.Parameters params = camera.getParameters();
                 params.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
                 camera.setParameters(params);
 
-                // FAILLE 1 : Ajouter un SurfaceTexture invisible pour empêcher le crash
                 try {
                     SurfaceTexture dummySurface = new SurfaceTexture(0);
                     camera.setPreviewTexture(dummySurface);
@@ -87,7 +97,6 @@ public class CameraHelper {
                     }
                 });
                 
-                // FAILLE 3 : On garde le thread en vie jusqu'à 10 sec max, mais on vérifie si la caméra est encore ouverte
                 int waitCount = 0;
                 while (camera != null && waitCount < 10) {
                     Thread.sleep(1000);
