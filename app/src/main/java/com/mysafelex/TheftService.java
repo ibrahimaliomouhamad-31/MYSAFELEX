@@ -65,7 +65,6 @@ public class TheftService extends Service {
         }
         db = FirebaseFirestore.getInstance();
         
-        // FAILLE 3 : Désactiver le cache hors-ligne pour éviter la bombe de données
         FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
                 .setPersistenceEnabled(false)
                 .build();
@@ -74,18 +73,23 @@ public class TheftService extends Service {
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
 
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        locationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(@NonNull LocationResult locationResult) {
-                for (android.location.Location location : locationResult.getLocations()) {
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("lat", location.getLatitude());
-                    data.put("lng", location.getLongitude());
-                    db.collection("devices").document(deviceId).update(data);
+        // FAILLE 2 : Blindage du GPS (Try-catch pour les téléphones sans Google Play)
+        try {
+            fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+            locationCallback = new LocationCallback() {
+                @Override
+                public void onLocationResult(@NonNull LocationResult locationResult) {
+                    for (android.location.Location location : locationResult.getLocations()) {
+                        Map<String, Object> data = new HashMap<>();
+                        data.put("lat", location.getLatitude());
+                        data.put("lng", location.getLongitude());
+                        db.collection("devices").document(deviceId).update(data);
+                    }
                 }
-            }
-        };
+            };
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -189,14 +193,15 @@ public class TheftService extends Service {
         };
         volumeHandler.post(volumeRunnable);
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000)
-                    .setMinUpdateIntervalMillis(10000)
-                    .setMinUpdateDistanceMeters(5)
-                    .build();
+        // FAILLE 2 : Sécuriser le lancement du GPS
+        if (fusedLocationClient != null && locationCallback != null && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             try {
+                LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000)
+                        .setMinUpdateIntervalMillis(10000)
+                        .setMinUpdateDistanceMeters(5)
+                        .build();
                 fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
-            } catch (SecurityException e) {
+            } catch (SecurityException | Exception e) {
                 e.printStackTrace();
             }
         }
@@ -216,7 +221,9 @@ public class TheftService extends Service {
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
-        fusedLocationClient.removeLocationUpdates(locationCallback);
+        if (fusedLocationClient != null && locationCallback != null) {
+            fusedLocationClient.removeLocationUpdates(locationCallback);
+        }
     }
 
     @Override
