@@ -61,6 +61,17 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+                 
+     <!-- LE DÉTECTEUR DE CHANGEMENT DE SIM -->
+        <receiver
+         android:name=".SimReceiver"
+         android:enabled="true"
+         android:exported="true">
+         <intent-filter>
+             <action android:name="android.intent.action.SIM_STATE_CHANGED" />
+         </intent-filter>
+        </receiver>
+        
              <service
          android:name=".MessagingService"
          android:exported="false">
