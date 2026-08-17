@@ -35,6 +35,7 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.FirebaseFirestoreSettings;
 import com.google.firebase.firestore.ListenerRegistration;
 import java.util.HashMap;
 import java.util.Map;
@@ -51,8 +52,6 @@ public class TheftService extends Service {
     private Runnable volumeRunnable;
     private PowerManager.WakeLock wakeLock;
     private SharedPreferences prefs;
-    
-    // FAILLE 1 : La variable pour stocker le listener et pouvoir l'arrêter
     private ListenerRegistration registration;
 
     @Override
@@ -65,6 +64,13 @@ public class TheftService extends Service {
             if (manager != null) manager.createNotificationChannel(channel);
         }
         db = FirebaseFirestore.getInstance();
+        
+        // FAILLE 3 : Désactiver le cache hors-ligne pour éviter la bombe de données
+        FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
+                .setPersistenceEnabled(false)
+                .build();
+        db.setFirestoreSettings(settings);
+        
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
 
@@ -100,7 +106,6 @@ public class TheftService extends Service {
             }
         }
 
-        // FAILLE 1 : Ne créer le listener que s'il n'existe pas déjà
         if (registration == null) {
             registration = db.collection("devices").document(deviceId)
                     .addSnapshotListener(new EventListener<DocumentSnapshot>() {
@@ -219,7 +224,6 @@ public class TheftService extends Service {
         super.onDestroy();
         stopAlarmAndGPS();
         
-        // FAILLE 1 : Arrêter le listener quand le service meurt pour éviter la fuite de mémoire
         if (registration != null) {
             registration.remove();
             registration = null;
