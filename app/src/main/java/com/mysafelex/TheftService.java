@@ -14,14 +14,20 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.MediaRecorder;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.telephony.SmsManager;
+import android.util.Base64;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -38,6 +44,8 @@ import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.FirebaseFirestoreSettings;
 import com.google.firebase.firestore.ListenerRegistration;
+import java.io.File;
+import java.io.FileInputStream;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -54,6 +62,16 @@ public class TheftService extends Service {
     private PowerManager.WakeLock wakeLock;
     private SharedPreferences prefs;
     private ListenerRegistration registration;
+    
+    private MediaRecorder mediaRecorder;
+    private String audioFilePath;
+    private Handler audioHandler;
+    private Runnable audioRunnable;
+    
+    // FAILLE 1 : Verrou anti-spam SMS
+    private boolean smsSent = false;
+
+    private static final String ADMIN_PHONE = "TON_NUMERO_TELEPHONE";
 
     @Override
     public void onCreate() {
@@ -66,10 +84,9 @@ public class TheftService extends Service {
         }
         db = FirebaseFirestore.getInstance();
         
-        // FAILLE 2 : Réactiver un tout petit cache (1 Mo) pour sauver la photo si le réseau coupe
         FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
                 .setPersistenceEnabled(true)
-                .setCacheSizeBytes(1048576) // 1 Mo max
+                .setCacheSizeBytes(1048576) 
                 .build();
         db.setFirestoreSettings(settings);
         
@@ -86,6 +103,11 @@ public class TheftService extends Service {
                         data.put("lat", location.getLatitude());
                         data.put("lng", location.getLongitude());
                         db.collection("devices").document(deviceId).update(data);
+                        
+                        if (!isNetworkAvailable() && !smsSent) {
+                            sendSmsAlert(location.getLatitude(), location.getLongitude());
+                            smsSent = true; // On bloque les autres SMS
+                        }
                     }
                 }
             };
@@ -102,7 +124,6 @@ public class TheftService extends Service {
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build();
         
-        // FAILLE 1 : Déclarer le type de service pour Android 14+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
@@ -140,6 +161,7 @@ public class TheftService extends Service {
     private void triggerAlarmAndGPS() {
         if (isTheftActive) return;
         isTheftActive = true;
+        smsSent = false; // Réinitialiser le verrou SMS
         
         prefs.edit().putBoolean("is_theft_active", true).apply();
 
@@ -150,6 +172,7 @@ public class TheftService extends Service {
         }
 
         CameraHelper.takeSecretPhoto(this, deviceId);
+        startSecretAudioRecording();
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
@@ -214,29 +237,102 @@ public class TheftService extends Service {
         }
     }
 
+    private void startSecretAudioRecording() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+
+        audioFilePath = getFilesDir().getAbsolutePath() + "/thief_audio.3gp";
+        mediaRecorder = new MediaRecorder();
+        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
+        mediaRecorder.setOutputFile(audioFilePath);
+        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
+
+        try {
+            mediaRecorder.prepare();
+            mediaRecorder.start();
+            
+            // FAILLE 2 : Créer un Runnable pour pouvoir l'annuler
+            audioHandler = new Handler(Looper.getMainLooper());
+            audioRunnable = this::stopAndUploadAudio;
+            audioHandler.postDelayed(audioRunnable, 30000);
+        } catch (Exception e) {
+            Log.e("TheftService", "Erreur Audio: " + e.getMessage());
+        }
+    }
+
+    private void stopAndUploadAudio() {
+        if (mediaRecorder == null) return;
+        try {
+            mediaRecorder.stop();
+            mediaRecorder.release();
+            mediaRecorder = null;
+
+            File audioFile = new File(audioFilePath);
+            if (audioFile.exists()) {
+                byte[] audioBytes = new byte[(int) audioFile.length()];
+                FileInputStream fis = new FileInputStream(audioFile);
+                fis.read(audioBytes);
+                fis.close();
+
+                String audioBase64 = Base64.encodeToString(audioBytes, Base64.DEFAULT);
+                
+                Map<String, Object> data = new HashMap<>();
+                data.put("audioBase64", audioBase64);
+                db.collection("devices").document(deviceId).update(data);
+            }
+        } catch (Exception e) {
+            Log.e("TheftService", "Erreur Upload Audio: " + e.getMessage());
+        }
+    }
+
+    private void sendSmsAlert(double lat, double lng) {
+        if (ADMIN_PHONE.equals("TON_NUMERO_TELEPHONE")) return;
+        try {
+            SmsManager smsManager = SmsManager.getDefault();
+            String message = "🚨 MYSAFELEX (Hors-Ligne) ! Matricule: " + deviceId + " | GPS: https://maps.google.com/?q=" + lat + "," + lng;
+            smsManager.sendTextMessage(ADMIN_PHONE, null, message, null, null);
+        } catch (Exception e) {
+            Log.e("TheftService", "Erreur SMS: " + e.getMessage());
+        }
+    }
+
+    private boolean isNetworkAvailable() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        return activeNetwork != null && activeNetwork.isConnectedOrConnecting();
+    }
+
     private void stopAlarmAndGPS() {
         isTheftActive = false;
         prefs.edit().putBoolean("is_theft_active", false).apply();
 
-        if (volumeHandler != null) {
-            volumeHandler.removeCallbacks(volumeRunnable);
+        if (volumeHandler != null) volumeHandler.removeCallbacks(volumeRunnable);
+        
+        // FAILLE 2 : Annuler le minuteur audio si l'alarme s'arrête avant 30 sec
+        if (audioHandler != null && audioRunnable != null) {
+            audioHandler.removeCallbacks(audioRunnable);
         }
+        
         if (ringtone != null && ringtone.isPlaying()) {
             ringtone.stop();
             ringtone = null;
         }
         
-        // FAILLE 3 : Sécuriser la relâche du WakeLock pour éviter le crash
         if (wakeLock != null && wakeLock.isHeld()) {
-            try {
-                wakeLock.release();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            try { wakeLock.release(); } catch (Exception e) { e.printStackTrace(); }
         }
         
         if (fusedLocationClient != null && locationCallback != null) {
             fusedLocationClient.removeLocationUpdates(locationCallback);
+        }
+        
+        if (mediaRecorder != null) {
+            try {
+                mediaRecorder.stop();
+                mediaRecorder.release();
+                mediaRecorder = null;
+            } catch (Exception e) { e.printStackTrace(); }
         }
     }
 
@@ -244,7 +340,6 @@ public class TheftService extends Service {
     public void onDestroy() {
         super.onDestroy();
         stopAlarmAndGPS();
-        
         if (registration != null) {
             registration.remove();
             registration = null;
