@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.telephony.TelephonyManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -86,13 +87,16 @@ public class MainActivity extends AppCompatActivity {
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
 
+            // Demander les permissions (y compris READ_PHONE_STATE pour la SIM)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{
                         Manifest.permission.ACCESS_FINE_LOCATION,
                         Manifest.permission.ACCESS_COARSE_LOCATION,
                         Manifest.permission.ACCESS_BACKGROUND_LOCATION,
                         Manifest.permission.CAMERA,
+                        Manifest.permission.READ_PHONE_STATE,
                         Manifest.permission.POST_NOTIFICATIONS
                 }, 101);
             }
@@ -164,7 +168,6 @@ public class MainActivity extends AppCompatActivity {
             }
 
             enableDeviceAdmin();
-            // FAILLE 3 : Ne sauvegarder localement QUE si Firebase a réussi
             registerStudentInDatabase(matricule, code);
         });
     }
@@ -190,9 +193,22 @@ public class MainActivity extends AppCompatActivity {
         db.collection("devices").document(matricule)
                 .set(studentData, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener(aVoid -> {
-                    // FAILLE 3 : Sauvegarde locale SEULEMENT après succès Firebase
                     prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
                     currentMatricule = matricule;
+                    
+                    // SAUVEGARDER LE NUMÉRO DE SÉRIE DE LA CARTE SIM LÉGITIME
+                    try {
+                        TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+                        if (tm != null && ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+                            String simSerial = tm.getSimSerialNumber();
+                            if (simSerial != null) {
+                                prefs.edit().putString("sim_serial", simSerial).apply();
+                            }
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
                     Toast.makeText(this, "Inscription réussie ! Vous êtes protégé.", Toast.LENGTH_SHORT).show();
                     editMatricule.setEnabled(false);
                 })
