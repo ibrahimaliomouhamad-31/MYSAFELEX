@@ -146,9 +146,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             String savedPin = prefs.getString("pin_code", "");
-            // FAILLE 9 : Vérifier que le PIN correspond AVANT d'arrêter l'alarme
             if (!savedPin.isEmpty() && code.equals(savedPin) && matricule.equals(currentMatricule)) {
-                // FAILLE 4 : Arrêt LOCAL en plus de l'arrêt distant (Mode Avion)
                 Intent stopIntent = new Intent(this, TheftService.class);
                 stopIntent.setAction("STOP_THEFT");
                 startService(stopIntent); 
@@ -165,10 +163,9 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
-            currentMatricule = matricule;
             enableDeviceAdmin();
-            registerStudentInDatabase(matricule);
+            // FAILLE 3 : Ne sauvegarder localement QUE si Firebase a réussi
+            registerStudentInDatabase(matricule, code);
         });
     }
 
@@ -182,18 +179,24 @@ public class MainActivity extends AppCompatActivity {
                 .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'arrêt réseau, mais arrêtée localement.", Toast.LENGTH_SHORT).show());
     }
 
-    private void registerStudentInDatabase(String matricule) {
-        // FAILLE 1 : Utiliser merge pour ne pas écraser le statut si l'élève existe déjà
+    private void registerStudentInDatabase(String matricule, String code) {
         Map<String, Object> studentData = new HashMap<>();
         studentData.put("token", currentToken);
+        studentData.put("status", "securise");
+        studentData.put("lat", null);
+        studentData.put("lng", null);
+        studentData.put("photoBase64", null);
 
         db.collection("devices").document(matricule)
                 .set(studentData, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener(aVoid -> {
+                    // FAILLE 3 : Sauvegarde locale SEULEMENT après succès Firebase
+                    prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
+                    currentMatricule = matricule;
                     Toast.makeText(this, "Inscription réussie ! Vous êtes protégé.", Toast.LENGTH_SHORT).show();
                     editMatricule.setEnabled(false);
                 })
-                .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'inscription.", Toast.LENGTH_SHORT).show());
+                .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'inscription réseau.", Toast.LENGTH_SHORT).show());
     }
 
     private void enableDeviceAdmin() {
