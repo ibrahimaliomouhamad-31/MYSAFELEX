@@ -1,10 +1,9 @@
 package com.mysafelex;
 
-import android.Manifest;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.os.AsyncTask;
 import android.util.Base64;
@@ -35,9 +34,7 @@ public class CameraHelper {
         protected Void doInBackground(Void... voids) {
             Camera camera = null;
             try {
-                // FAILLE 2 : Vérifier si le voleur n'a pas révoqué la permission de la caméra
                 if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    Log.e("CameraHelper", "Permission caméra révoquée !");
                     return null;
                 }
 
@@ -91,7 +88,12 @@ public class CameraHelper {
     private static void uploadPhotoToFirestore(Context context, byte[] data, String deviceId) {
         try {
             Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
-            Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap, 400, 300, false);
+            
+            // FAILLE 1 : Rotation de la photo (270 degrés pour la caméra frontale)
+            Matrix matrix = new Matrix();
+            matrix.postRotate(270);
+            Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+            Bitmap scaledBitmap = Bitmap.createScaledBitmap(rotatedBitmap, 400, 300, false);
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos);
