@@ -35,6 +35,7 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.ListenerRegistration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -50,6 +51,9 @@ public class TheftService extends Service {
     private Runnable volumeRunnable;
     private PowerManager.WakeLock wakeLock;
     private SharedPreferences prefs;
+    
+    // FAILLE 1 : La variable pour stocker le listener et pouvoir l'arrêter
+    private ListenerRegistration registration;
 
     @Override
     public void onCreate() {
@@ -96,19 +100,22 @@ public class TheftService extends Service {
             }
         }
 
-        db.collection("devices").document(deviceId)
-                .addSnapshotListener(new EventListener<DocumentSnapshot>() {
-                    @Override
-                    public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
-                        if (e != null || snapshot == null || !snapshot.exists()) return;
-                        String status = snapshot.getString("status");
-                        if (status != null && status.equals("vole")) {
-                            triggerAlarmAndGPS();
-                        } else if (status != null && status.equals("securise")) {
-                            stopAlarmAndGPS();
+        // FAILLE 1 : Ne créer le listener que s'il n'existe pas déjà
+        if (registration == null) {
+            registration = db.collection("devices").document(deviceId)
+                    .addSnapshotListener(new EventListener<DocumentSnapshot>() {
+                        @Override
+                        public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
+                            if (e != null || snapshot == null || !snapshot.exists()) return;
+                            String status = snapshot.getString("status");
+                            if (status != null && status.equals("vole")) {
+                                triggerAlarmAndGPS();
+                            } else if (status != null && status.equals("securise")) {
+                                stopAlarmAndGPS();
+                            }
                         }
-                    }
-                });
+                    });
+        }
 
         return START_STICKY;
     }
@@ -119,11 +126,10 @@ public class TheftService extends Service {
         
         prefs.edit().putBoolean("is_theft_active", true).apply();
 
-        // FAILLE 2 : WakeLock permanent (PARTIAL_WAKE_LOCK) pour le CPU + FULL_WAKE_LOCK pour l'écran
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "MYSAFELEX::AlarmWakeLock");
-            wakeLock.acquire(); // Pas de timeout, on le relâchera à l'arrêt
+            wakeLock.acquire();
         }
 
         CameraHelper.takeSecretPhoto(this, deviceId);
@@ -212,6 +218,12 @@ public class TheftService extends Service {
     public void onDestroy() {
         super.onDestroy();
         stopAlarmAndGPS();
+        
+        // FAILLE 1 : Arrêter le listener quand le service meurt pour éviter la fuite de mémoire
+        if (registration != null) {
+            registration.remove();
+            registration = null;
+        }
     }
 
     @Nullable
