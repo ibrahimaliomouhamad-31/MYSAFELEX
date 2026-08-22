@@ -1,7 +1,7 @@
 package com.mysafelex;
 
+import android.Manifest;
 import android.app.AlertDialog;
-import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -28,7 +28,7 @@ public class MainActivity extends AppCompatActivity {
 
     private EditText editMatricule, editCode;
     private Button btnLogin;
-    private TextView txtToken;
+    private TextView txtStatus, txtToken;
     private static final int REQUEST_CODE_ENABLE_ADMIN = 1;
     private SharedPreferences prefs;
     private FirebaseFirestore db;
@@ -48,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
         editCode = findViewById(R.id.editInviteCode);
         btnLogin = findViewById(R.id.btnLogin);
         txtToken = findViewById(R.id.txtToken);
+        txtStatus = findViewById(R.id.txtStatusCard);
 
         currentMatricule = prefs.getString("matricule", "");
         if (!currentMatricule.isEmpty()) {
@@ -60,6 +61,24 @@ public class MainActivity extends AppCompatActivity {
             showMandatoryLockGuide();
         } else {
             startAppSystems();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateStatusCard();
+    }
+
+    private void updateStatusCard() {
+        boolean registered = !prefs.getString("matricule", "").isEmpty();
+        boolean theftActive = prefs.getBoolean("is_theft_active", false);
+        if (theftActive) {
+            txtStatus.setText("🔴 ALARME ACTIVE — Vol signalé");
+        } else if (registered) {
+            txtStatus.setText("🟢 Protégé — " + prefs.getString("matricule", ""));
+        } else {
+            txtStatus.setText("🟠 En attente d'inscription");
         }
     }
 
@@ -87,15 +106,16 @@ public class MainActivity extends AppCompatActivity {
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
 
-            // Demander les permissions (y compris READ_PHONE_STATE pour la SIM)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{
                         Manifest.permission.ACCESS_FINE_LOCATION,
                         Manifest.permission.ACCESS_COARSE_LOCATION,
                         Manifest.permission.ACCESS_BACKGROUND_LOCATION,
                         Manifest.permission.CAMERA,
+                        Manifest.permission.RECORD_AUDIO,
                         Manifest.permission.READ_PHONE_STATE,
                         Manifest.permission.POST_NOTIFICATIONS
                 }, 101);
@@ -123,17 +143,18 @@ public class MainActivity extends AppCompatActivity {
                             return;
                         }
                         currentToken = task.getResult();
-                        txtToken.setText("Système de sécurité: ACTIF");
+                        txtToken.setText("Système de sécurité: ACTIF ✔");
                         btnLogin.setEnabled(true);
                         btnLogin.setText("SAUVEGARDER");
                         setupLoginClickListener();
                     });
         } else {
-            txtToken.setText("Système de sécurité: ACTIF");
+            txtToken.setText("Système de sécurité: ACTIF ✔");
             btnLogin.setEnabled(true);
             btnLogin.setText("SAUVEGARDER");
             setupLoginClickListener();
         }
+        updateStatusCard();
     }
 
     private void setupLoginClickListener() {
@@ -153,8 +174,8 @@ public class MainActivity extends AppCompatActivity {
             if (!savedPin.isEmpty() && code.equals(savedPin) && matricule.equals(currentMatricule)) {
                 Intent stopIntent = new Intent(this, TheftService.class);
                 stopIntent.setAction("STOP_THEFT");
-                startService(stopIntent); 
-                
+                startService(stopIntent);
+
                 stopTheftRemotely(matricule);
                 return;
             } else if (!savedPin.isEmpty()) {
@@ -178,6 +199,7 @@ public class MainActivity extends AppCompatActivity {
                 .addOnSuccessListener(aVoid -> {
                     Toast.makeText(this, "Alarme arrêtée !", Toast.LENGTH_SHORT).show();
                     editCode.setText("");
+                    updateStatusCard();
                 })
                 .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'arrêt réseau, mais arrêtée localement.", Toast.LENGTH_SHORT).show());
     }
@@ -188,14 +210,13 @@ public class MainActivity extends AppCompatActivity {
         studentData.put("status", "securise");
         studentData.put("lat", null);
         studentData.put("lng", null);
-        studentData.put("photoBase64", null);
 
         db.collection("devices").document(matricule)
                 .set(studentData, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener(aVoid -> {
                     prefs.edit().putString("matricule", matricule).putString("pin_code", code).apply();
                     currentMatricule = matricule;
-                    
+
                     // SAUVEGARDER LE NUMÉRO DE SÉRIE DE LA CARTE SIM LÉGITIME
                     try {
                         TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
@@ -211,17 +232,18 @@ public class MainActivity extends AppCompatActivity {
 
                     Toast.makeText(this, "Inscription réussie ! Vous êtes protégé.", Toast.LENGTH_SHORT).show();
                     editMatricule.setEnabled(false);
+                    updateStatusCard();
                 })
                 .addOnFailureListener(e -> Toast.makeText(this, "Erreur d'inscription réseau.", Toast.LENGTH_SHORT).show());
     }
 
     private void enableDeviceAdmin() {
-        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        android.app.admin.DevicePolicyManager dpm = (android.app.admin.DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
 
         if (!dpm.isAdminActive(adminComponent)) {
-            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
-            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
+            Intent intent = new Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+            intent.putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
             startActivityForResult(intent, REQUEST_CODE_ENABLE_ADMIN);
         } else {
             Toast.makeText(this, "Protection active !", Toast.LENGTH_SHORT).show();

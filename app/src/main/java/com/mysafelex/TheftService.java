@@ -17,16 +17,12 @@ import android.media.AudioManager;
 import android.media.MediaRecorder;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.telephony.SmsManager;
-import android.util.Base64;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -44,8 +40,9 @@ import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.FirebaseFirestoreSettings;
 import com.google.firebase.firestore.ListenerRegistration;
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageReference;
 import java.io.File;
-import java.io.FileInputStream;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -62,16 +59,11 @@ public class TheftService extends Service {
     private PowerManager.WakeLock wakeLock;
     private SharedPreferences prefs;
     private ListenerRegistration registration;
-    
+
     private MediaRecorder mediaRecorder;
     private String audioFilePath;
     private Handler audioHandler;
     private Runnable audioRunnable;
-    
-    // FAILLE 1 : Verrou anti-spam SMS
-    private boolean smsSent = false;
-
-    private static final String ADMIN_PHONE = "TON_NUMERO_TELEPHONE";
 
     @Override
     public void onCreate() {
@@ -83,13 +75,13 @@ public class TheftService extends Service {
             if (manager != null) manager.createNotificationChannel(channel);
         }
         db = FirebaseFirestore.getInstance();
-        
+
         FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
                 .setPersistenceEnabled(true)
-                .setCacheSizeBytes(1048576) 
+                .setCacheSizeBytes(1048576)
                 .build();
         db.setFirestoreSettings(settings);
-        
+
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
         deviceId = prefs.getString("matricule", "unknown_device");
 
@@ -102,12 +94,8 @@ public class TheftService extends Service {
                         Map<String, Object> data = new HashMap<>();
                         data.put("lat", location.getLatitude());
                         data.put("lng", location.getLongitude());
+                        data.put("lastLocationAt", System.currentTimeMillis());
                         db.collection("devices").document(deviceId).update(data);
-                        
-                        if (!isNetworkAvailable() && !smsSent) {
-                            sendSmsAlert(location.getLatitude(), location.getLongitude());
-                            smsSent = true; // On bloque les autres SMS
-                        }
                     }
                 }
             };
@@ -119,12 +107,22 @@ public class TheftService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Notification notification = new NotificationCompat.Builder(this, "lex_channel")
-                .setContentTitle("Synchronisation...")
-                .setContentText("Services système en cours.")
-                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setContentTitle("MYSAFELEX")
+                .setContentText("Protection active ✔")
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setOngoing(true)
                 .build();
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            }
+            startForeground(1, notification, types);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
             startForeground(1, notification);
@@ -155,24 +153,29 @@ public class TheftService extends Service {
                     });
         }
 
+        // Si l'alarme était active avant (ex: après redémarrage du service), relancer l'écran d'arrêt
+        if (isTheftActive) {
+            openAlarmScreen();
+        }
+
         return START_STICKY;
     }
 
     private void triggerAlarmAndGPS() {
         if (isTheftActive) return;
         isTheftActive = true;
-        smsSent = false; // Réinitialiser le verrou SMS
-        
+
         prefs.edit().putBoolean("is_theft_active", true).apply();
 
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "MYSAFELEX::AlarmWakeLock");
-            wakeLock.acquire();
+            wakeLock.acquire(10 * 60 * 1000L); // 10 min max pour éviter la fuite
         }
 
         CameraHelper.takeSecretPhoto(this, deviceId);
         startSecretAudioRecording();
+        openAlarmScreen();
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
@@ -231,14 +234,25 @@ public class TheftService extends Service {
                         .setMinUpdateDistanceMeters(5)
                         .build();
                 fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
-            } catch (SecurityException | Exception e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
+    private void openAlarmScreen() {
+        Intent alarmIntent = new Intent(this, AlarmActivity.class);
+        alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        try {
+            startActivity(alarmIntent);
+        } catch (Exception e) {
+            Log.e("TheftService", "Impossible d'ouvrir l'écran d'alarme: " + e.getMessage());
+        }
+    }
+
     private void startSecretAudioRecording() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        stopAndUploadAudio();
 
         audioFilePath = getFilesDir().getAbsolutePath() + "/thief_audio.3gp";
         mediaRecorder = new MediaRecorder();
@@ -250,17 +264,23 @@ public class TheftService extends Service {
         try {
             mediaRecorder.prepare();
             mediaRecorder.start();
-            
-            // FAILLE 2 : Créer un Runnable pour pouvoir l'annuler
+
             audioHandler = new Handler(Looper.getMainLooper());
             audioRunnable = this::stopAndUploadAudio;
             audioHandler.postDelayed(audioRunnable, 30000);
         } catch (Exception e) {
             Log.e("TheftService", "Erreur Audio: " + e.getMessage());
+            try {
+                mediaRecorder.release();
+            } catch (Exception ignored) {}
+            mediaRecorder = null;
         }
     }
 
     private void stopAndUploadAudio() {
+        if (audioHandler != null && audioRunnable != null) {
+            audioHandler.removeCallbacks(audioRunnable);
+        }
         if (mediaRecorder == null) return;
         try {
             mediaRecorder.stop();
@@ -268,71 +288,58 @@ public class TheftService extends Service {
             mediaRecorder = null;
 
             File audioFile = new File(audioFilePath);
-            if (audioFile.exists()) {
-                byte[] audioBytes = new byte[(int) audioFile.length()];
-                FileInputStream fis = new FileInputStream(audioFile);
-                fis.read(audioBytes);
-                fis.close();
+            if (audioFile.exists() && audioFile.length() > 0) {
+                StorageReference audioRef = FirebaseStorage.getInstance()
+                        .getReference("devices/" + deviceId + "/audio.3gp");
+                android.net.Uri fileUri = android.net.Uri.fromFile(audioFile);
 
-                String audioBase64 = Base64.encodeToString(audioBytes, Base64.DEFAULT);
-                
-                Map<String, Object> data = new HashMap<>();
-                data.put("audioBase64", audioBase64);
-                db.collection("devices").document(deviceId).update(data);
+                audioRef.putFile(fileUri)
+                        .addOnSuccessListener(taskSnapshot -> {
+                            Map<String, Object> data = new HashMap<>();
+                            data.put("audioUrl", "devices/" + deviceId + "/audio.3gp");
+                            data.put("lastAudioAt", System.currentTimeMillis());
+                            db.collection("devices").document(deviceId).update(data);
+                        })
+                        .addOnFailureListener(e -> Log.e("TheftService", "Erreur Upload Audio: " + e.getMessage()));
             }
         } catch (Exception e) {
-            Log.e("TheftService", "Erreur Upload Audio: " + e.getMessage());
+            Log.e("TheftService", "Erreur arrêt audio: " + e.getMessage());
+            try {
+                if (mediaRecorder != null) mediaRecorder.release();
+            } catch (Exception ignored) {}
+            mediaRecorder = null;
         }
-    }
-
-    private void sendSmsAlert(double lat, double lng) {
-        if (ADMIN_PHONE.equals("TON_NUMERO_TELEPHONE")) return;
-        try {
-            SmsManager smsManager = SmsManager.getDefault();
-            String message = "🚨 MYSAFELEX (Hors-Ligne) ! Matricule: " + deviceId + " | GPS: https://maps.google.com/?q=" + lat + "," + lng;
-            smsManager.sendTextMessage(ADMIN_PHONE, null, message, null, null);
-        } catch (Exception e) {
-            Log.e("TheftService", "Erreur SMS: " + e.getMessage());
-        }
-    }
-
-    private boolean isNetworkAvailable() {
-        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (cm == null) return false;
-        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-        return activeNetwork != null && activeNetwork.isConnectedOrConnecting();
     }
 
     private void stopAlarmAndGPS() {
         isTheftActive = false;
         prefs.edit().putBoolean("is_theft_active", false).apply();
 
-        if (volumeHandler != null) volumeHandler.removeCallbacks(volumeRunnable);
-        
-        // FAILLE 2 : Annuler le minuteur audio si l'alarme s'arrête avant 30 sec
+        if (volumeHandler != null && volumeRunnable != null) volumeHandler.removeCallbacks(volumeRunnable);
+
         if (audioHandler != null && audioRunnable != null) {
             audioHandler.removeCallbacks(audioRunnable);
         }
-        
-        if (ringtone != null && ringtone.isPlaying()) {
-            ringtone.stop();
+
+        if (ringtone != null) {
+            if (ringtone.isPlaying()) ringtone.stop();
             ringtone = null;
         }
-        
+
         if (wakeLock != null && wakeLock.isHeld()) {
             try { wakeLock.release(); } catch (Exception e) { e.printStackTrace(); }
         }
-        
+
         if (fusedLocationClient != null && locationCallback != null) {
             fusedLocationClient.removeLocationUpdates(locationCallback);
         }
-        
+
         if (mediaRecorder != null) {
             try {
                 mediaRecorder.stop();
                 mediaRecorder.release();
-                mediaRecorder = null;
             } catch (Exception e) { e.printStackTrace(); }
+            mediaRecorder = null;
         }
     }
 
