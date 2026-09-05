@@ -39,7 +39,12 @@ public class AlarmActivity extends AppCompatActivity {
             String pin = editPin.getText().toString();
             String savedPin = prefs.getString("pin_code", "");
 
-            if (savedPin.isEmpty() || pin.equals(savedPin)) {
+            if (savedPin.isEmpty()) {
+                Toast.makeText(this, "Aucun code enregistré. Contactez la direction.", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            if (pin.equals(savedPin)) {
                 Intent stopIntent = new Intent(this, TheftService.class);
                 stopIntent.setAction("STOP_THEFT");
                 startService(stopIntent);

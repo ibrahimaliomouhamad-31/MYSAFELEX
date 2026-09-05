@@ -40,13 +40,23 @@ public class MessagingService extends FirebaseMessagingService {
         String matricule = prefs.getString("matricule", null);
         
         if (matricule != null) {
-            Map<String, Object> updates = new HashMap<>();
-            updates.put("token", token);
-            
-            FirebaseFirestore.getInstance().collection("devices").document(matricule)
-                    .update(updates)
-                    .addOnSuccessListener(aVoid -> Log.d("MYSAFELEX", "Token mis à jour"))
-                    .addOnFailureListener(e -> Log.e("MYSAFELEX", "Erreur token", e));
+            AuthManager.ensureSignedIn(new AuthManager.Callback() {
+                @Override
+                public void onReady(String uid) {
+                    Map<String, Object> updates = new HashMap<>();
+                    updates.put("token", token);
+
+                    FirebaseFirestore.getInstance().collection("devices").document(matricule)
+                            .update(updates)
+                            .addOnSuccessListener(aVoid -> Log.d("MYSAFELEX", "Token mis à jour"))
+                            .addOnFailureListener(e -> Log.e("MYSAFELEX", "Erreur token", e));
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    Log.e("MYSAFELEX", "Auth anonyme impossible", e);
+                }
+            });
         }
     }
 }

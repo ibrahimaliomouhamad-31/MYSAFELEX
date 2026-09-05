@@ -5,156 +5,123 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Matrix;
-import android.graphics.SurfaceTexture;
-import android.hardware.Camera;
-import android.os.AsyncTask;
-import android.util.Base64;
 import android.util.Log;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageCapture;
+import androidx.camera.core.ImageCaptureException;
+import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.LifecycleOwner;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
+
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+/**
+ * Prend une photo discrète avec la caméra frontale via CameraX.
+ *
+ * Remplace l'ancienne implémentation basée sur android.hardware.Camera
+ * (dépréciée depuis l'API 21, peu fiable sur les appareils récents) et sur
+ * AsyncTask (déprécié depuis l'API 30).
+ *
+ * Note : depuis Android 9 (caméra) et Android 12 (micro), le système affiche
+ * un indicateur visuel obligatoire pendant l'utilisation — la capture n'est
+ * donc pas invisible pour quelqu'un qui regarde l'écran à ce moment précis.
+ */
 public class CameraHelper {
 
-    public static void takeSecretPhoto(Context context, String deviceId) {
-        new CameraTask(context.getApplicationContext(), deviceId).execute();
-    }
+    private static final String TAG = "CameraHelper";
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
-    private static class CameraTask extends AsyncTask<Void, Void, Void> {
-        private final Context appContext;
-        private final String deviceId;
+    public static void takeSecretPhoto(Context context, LifecycleOwner lifecycleOwner, String deviceId) {
+        Context appContext = context.getApplicationContext();
 
-        CameraTask(Context appContext, String deviceId) {
-            this.appContext = appContext;
-            this.deviceId = deviceId;
+        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Permission caméra manquante, capture annulée.");
+            return;
         }
 
-        private volatile boolean photoHandled = false;
-
-        @Override
-        protected Void doInBackground(Void... voids) {
-            Camera camera = null;
+        ListenableFuture<ProcessCameraProvider> providerFuture = ProcessCameraProvider.getInstance(appContext);
+        providerFuture.addListener(() -> {
             try {
-                if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    return null;
-                }
+                ProcessCameraProvider provider = providerFuture.get();
 
-                int cameraId = -1;
-                int numberOfCameras = Camera.getNumberOfCameras();
-                for (int i = 0; i < numberOfCameras; i++) {
-                    Camera.CameraInfo info = new Camera.CameraInfo();
-                    Camera.getCameraInfo(i, info);
-                    if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                        cameraId = i;
-                        break;
-                    }
-                }
+                ImageCapture imageCapture = new ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build();
 
-                if (cameraId == -1) return null;
+                provider.unbindAll();
+                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, imageCapture);
 
-                // Boucle de réessai si la caméra est occupée par le voleur
-                int retryCount = 0;
-                while (camera == null && retryCount < 3) {
-                    try {
-                        camera = Camera.open(cameraId);
-                    } catch (Exception e) {
-                        Log.e("CameraHelper", "Caméra occupée, réessai... (" + retryCount + ")");
-                        Thread.sleep(1000);
-                    }
-                    retryCount++;
-                }
+                File photoFile = new File(appContext.getCacheDir(), "secret_photo_" + System.currentTimeMillis() + ".jpg");
+                ImageCapture.OutputFileOptions outputOptions =
+                        new ImageCapture.OutputFileOptions.Builder(photoFile).build();
 
-                if (camera == null) return null;
-
-                Camera.Parameters params = camera.getParameters();
-                params.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-                camera.setParameters(params);
-
-                try {
-                    SurfaceTexture dummySurface = new SurfaceTexture(0);
-                    camera.setPreviewTexture(dummySurface);
-                } catch (Exception e) {
-                    Log.e("CameraHelper", "Erreur SurfaceTexture: " + e.getMessage());
-                }
-
-                camera.startPreview();
-
-                final Camera finalCamera = camera;
-                camera.takePicture(null, null, new Camera.PictureCallback() {
+                imageCapture.takePicture(outputOptions, EXECUTOR, new ImageCapture.OnImageSavedCallback() {
                     @Override
-                    public void onPictureTaken(byte[] data, Camera camera) {
-                        photoHandled = true;
+                    public void onImageSaved(androidx.camera.core.ImageCapture.OutputFileResults outputFileResults) {
                         try {
-                            uploadPhotoToStorage(appContext, data, deviceId);
-                        } catch (Exception e) {
-                            Log.e("CameraHelper", "Erreur upload: " + e.getMessage());
+                            processAndUpload(appContext, photoFile, deviceId);
                         } finally {
-                            finalCamera.stopPreview();
-                            finalCamera.release();
+                            provider.unbindAll();
                         }
                     }
+
+                    @Override
+                    public void onError(ImageCaptureException exception) {
+                        Log.e(TAG, "Erreur de capture: " + exception.getMessage());
+                        provider.unbindAll();
+                    }
                 });
-
-                int waitCount = 0;
-                while (waitCount < 10 && !photoHandled) {
-                    Thread.sleep(1000);
-                    waitCount++;
-                }
-
-                if (!photoHandled && camera != null) {
-                    try {
-                        camera.stopPreview();
-                        camera.release();
-                    } catch (Exception ignored) {}
-                }
-
             } catch (Exception e) {
-                Log.e("CameraHelper", "Erreur caméra: " + e.getMessage());
-                if (camera != null) camera.release();
+                Log.e(TAG, "Erreur d'initialisation CameraX: " + e.getMessage());
             }
-            return null;
+        }, ContextCompat.getMainExecutor(appContext));
+    }
+
+    private static void processAndUpload(Context appContext, File photoFile, String deviceId) {
+        try {
+            Bitmap bitmap = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
+            if (bitmap == null) {
+                Log.e(TAG, "Impossible de décoder la photo capturée.");
+                return;
+            }
+            Bitmap scaled = Bitmap.createScaledBitmap(bitmap, 640, 480, false);
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            scaled.compress(Bitmap.CompressFormat.JPEG, 60, baos);
+            uploadPhotoToStorage(appContext, baos.toByteArray(), deviceId);
+        } catch (Exception e) {
+            Log.e(TAG, "Erreur traitement photo: " + e.getMessage());
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            photoFile.delete();
         }
     }
 
-    private static void uploadPhotoToStorage(Context context, byte[] data, String deviceId) {
-        try {
-            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
-            if (bitmap == null) return;
+    private static void uploadPhotoToStorage(Context context, byte[] compressedData, String deviceId) {
+        StorageReference storageRef = FirebaseStorage.getInstance()
+                .getReference("devices/" + deviceId + "/photo.jpg");
 
-            Matrix matrix = new Matrix();
-            matrix.postRotate(270);
-            Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-            Bitmap scaledBitmap = Bitmap.createScaledBitmap(rotatedBitmap, 640, 480, false);
+        storageRef.putBytes(compressedData)
+                .addOnSuccessListener(taskSnapshot -> {
+                    // On ne duplique plus la photo en Base64 dans Firestore (coût + limite de
+                    // taille de document) : seule la référence Storage est stockée.
+                    Map<String, Object> updates = new HashMap<>();
+                    updates.put("photoUrl", "devices/" + deviceId + "/photo.jpg");
+                    updates.put("lastPhotoAt", System.currentTimeMillis());
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos);
-            byte[] compressedData = baos.toByteArray();
-
-            StorageReference storageRef = FirebaseStorage.getInstance()
-                    .getReference("devices/" + deviceId + "/photo.jpg");
-
-            storageRef.putBytes(compressedData)
-                    .addOnSuccessListener(taskSnapshot -> {
-                        // On garde aussi une miniature Base64 pour l'aperçu rapide dans Firestore
-                        String thumbBase64 = Base64.encodeToString(compressedData, Base64.DEFAULT);
-                        Map<String, Object> updates = new HashMap<>();
-                        updates.put("photoBase64", thumbBase64);
-                        updates.put("photoUrl", "devices/" + deviceId + "/photo.jpg");
-                        updates.put("lastPhotoAt", System.currentTimeMillis());
-
-                        FirebaseFirestore.getInstance().collection("devices").document(deviceId)
-                                .update(updates)
-                                .addOnFailureListener(e -> Log.e("CameraHelper", "Erreur Firestore: " + e.getMessage()));
-                    })
-                    .addOnFailureListener(e -> Log.e("CameraHelper", "Erreur Storage: " + e.getMessage()));
-
-        } catch (Exception e) {
-            Log.e("CameraHelper", "Erreur photo: " + e.getMessage());
-        }
+                    FirebaseFirestore.getInstance().collection("devices").document(deviceId)
+                            .update(updates)
+                            .addOnFailureListener(e -> Log.e(TAG, "Erreur Firestore: " + e.getMessage()));
+                })
+                .addOnFailureListener(e -> Log.e(TAG, "Erreur Storage: " + e.getMessage()));
     }
 }

@@ -36,10 +36,20 @@ public class SimReceiver extends BroadcastReceiver {
                         alert.put("simChanged", true);
                         alert.put("alertAt", System.currentTimeMillis());
 
-                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                .collection("devices").document(matricule)
-                                .update(alert)
-                                .addOnFailureListener(e -> Log.e("SimReceiver", "Erreur Firestore: " + e.getMessage()));
+                        AuthManager.ensureSignedIn(new AuthManager.Callback() {
+                            @Override
+                            public void onReady(String uid) {
+                                com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                        .collection("devices").document(matricule)
+                                        .update(alert)
+                                        .addOnFailureListener(e -> Log.e("SimReceiver", "Erreur Firestore: " + e.getMessage()));
+                            }
+
+                            @Override
+                            public void onError(Exception e) {
+                                Log.e("SimReceiver", "Auth anonyme impossible: " + e.getMessage());
+                            }
+                        });
 
                         // Déclencher l'alarme locale aussi !
                         Intent serviceIntent = new Intent(context, TheftService.class);

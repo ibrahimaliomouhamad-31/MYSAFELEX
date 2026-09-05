@@ -4,8 +4,8 @@ import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.Service;
 import android.app.admin.DevicePolicyManager;
+import androidx.lifecycle.LifecycleService;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -46,7 +46,7 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 
-public class TheftService extends Service {
+public class TheftService extends LifecycleService {
 
     private Ringtone ringtone;
     private FirebaseFirestore db;
@@ -106,6 +106,8 @@ public class TheftService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        super.onStartCommand(intent, flags, startId);
+
         Notification notification = new NotificationCompat.Builder(this, "lex_channel")
                 .setContentTitle("MYSAFELEX")
                 .setContentText("Protection active ✔")
@@ -138,19 +140,17 @@ public class TheftService extends Service {
         }
 
         if (registration == null) {
-            registration = db.collection("devices").document(deviceId)
-                    .addSnapshotListener(new EventListener<DocumentSnapshot>() {
-                        @Override
-                        public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
-                            if (e != null || snapshot == null || !snapshot.exists()) return;
-                            String status = snapshot.getString("status");
-                            if (status != null && status.equals("vole")) {
-                                triggerAlarmAndGPS();
-                            } else if (status != null && status.equals("securise")) {
-                                stopAlarmAndGPS();
-                            }
-                        }
-                    });
+            AuthManager.ensureSignedIn(new AuthManager.Callback() {
+                @Override
+                public void onReady(@NonNull String uid) {
+                    attachStatusListener();
+                }
+
+                @Override
+                public void onError(@NonNull Exception e) {
+                    Log.e("TheftService", "Auth anonyme impossible, réessai plus tard", e);
+                }
+            });
         }
 
         // Si l'alarme était active avant (ex: après redémarrage du service), relancer l'écran d'arrêt
@@ -159,6 +159,22 @@ public class TheftService extends Service {
         }
 
         return START_STICKY;
+    }
+
+    private void attachStatusListener() {
+        registration = db.collection("devices").document(deviceId)
+                .addSnapshotListener(new EventListener<DocumentSnapshot>() {
+                    @Override
+                    public void onEvent(@Nullable DocumentSnapshot snapshot, @Nullable FirebaseFirestoreException e) {
+                        if (e != null || snapshot == null || !snapshot.exists()) return;
+                        String status = snapshot.getString("status");
+                        if (status != null && status.equals("vole")) {
+                            triggerAlarmAndGPS();
+                        } else if (status != null && status.equals("securise")) {
+                            stopAlarmAndGPS();
+                        }
+                    }
+                });
     }
 
     private void triggerAlarmAndGPS() {
@@ -173,7 +189,7 @@ public class TheftService extends Service {
             wakeLock.acquire(10 * 60 * 1000L); // 10 min max pour éviter la fuite
         }
 
-        CameraHelper.takeSecretPhoto(this, deviceId);
+        CameraHelper.takeSecretPhoto(this, this, deviceId);
         startSecretAudioRecording();
         openAlarmScreen();
 

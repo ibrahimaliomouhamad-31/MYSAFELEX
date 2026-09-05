@@ -23,6 +23,7 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.HashMap;
 import java.util.Map;
+import android.util.Log;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -84,13 +85,21 @@ public class MainActivity extends AppCompatActivity {
 
     private void showMandatoryLockGuide() {
         new AlertDialog.Builder(this)
-                .setTitle("⚠️ CONFIGURATION OBLIGATOIRE")
-                .setMessage("Pour que l'alarme anti-vol fonctionne, Android exige que vous verrouilliez cette application.\n\n" +
-                        "ÉTAPE 1 : Cliquez sur 'Ouvrir les applications récentes' (le carré en bas de votre écran).\n" +
+                .setTitle("Protection anti-vol LEX")
+                .setMessage("Cette application protège votre téléphone en cas de vol : en cas d'alerte, elle peut " +
+                        "prendre une photo, enregistrer un son bref et suivre la position de l'appareil, pour " +
+                        "aider la direction à le récupérer.\n\n" +
+                        "Pour empêcher un voleur de désactiver facilement cette protection, nous vous recommandons " +
+                        "d'épingler l'application (elle restera au premier plan tant qu'on ne saisit pas votre code) :\n\n" +
+                        "ÉTAPE 1 : Ouvrez les applications récentes (le carré en bas de votre écran).\n" +
                         "ÉTAPE 2 : Restez appuyé sur 'Bloc-note'.\n" +
                         "ÉTAPE 3 : Cliquez sur l'icône du Cadenas 🔒.\n\n" +
-                        "Tant que vous n'aurez pas fait cela, l'application refusera de s'activer.")
+                        "Vous pouvez continuer sans épingler l'app, mais la protection sera plus facile à désactiver.")
                 .setCancelable(false)
+                .setNegativeButton("Continuer sans épingler", (dialog, which) -> {
+                    prefs.edit().putBoolean("is_app_locked", true).apply();
+                    startAppSystems();
+                })
                 .setPositiveButton("J'ai mis le cadenas", (dialog, which) -> {
                     prefs.edit().putBoolean("is_app_locked", true).apply();
                     Toast.makeText(this, "Merci ! L'application s'active.", Toast.LENGTH_SHORT).show();
@@ -100,6 +109,25 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startAppSystems() {
+        // L'authentification doit être prête avant toute lecture/écriture Firestore :
+        // les règles de sécurité refusent désormais les accès non authentifiés.
+        AuthManager.ensureSignedIn(new AuthManager.Callback() {
+            @Override
+            public void onReady(String uid) {
+                startAppSystemsAuthenticated();
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e("MainActivity", "Auth anonyme impossible", e);
+                Toast.makeText(MainActivity.this,
+                        "Erreur réseau, impossible d'activer la protection pour le moment.",
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    private void startAppSystemsAuthenticated() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
@@ -157,6 +185,24 @@ public class MainActivity extends AppCompatActivity {
         updateStatusCard();
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != 101) return;
+
+        java.util.List<String> denied = new java.util.ArrayList<>();
+        for (int i = 0; i < permissions.length; i++) {
+            if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                denied.add(permissions[i]);
+            }
+        }
+        if (!denied.isEmpty()) {
+            Toast.makeText(this,
+                    "Certaines permissions ont été refusées : la protection sera incomplète (" + denied.size() + " manquante(s)).",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void setupLoginClickListener() {
         btnLogin.setOnClickListener(v -> {
             if (System.currentTimeMillis() - lastClickTime < 2000) return;
@@ -205,7 +251,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void registerStudentInDatabase(String matricule, String code) {
+        String uid = AuthManager.getCurrentUidOrNull();
+        if (uid == null) {
+            Toast.makeText(this, "Erreur d'authentification, réessayez.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         Map<String, Object> studentData = new HashMap<>();
+        studentData.put("ownerUid", uid);
         studentData.put("token", currentToken);
         studentData.put("status", "securise");
         studentData.put("lat", null);
