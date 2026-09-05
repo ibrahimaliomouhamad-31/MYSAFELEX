@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.util.Base64;
 import android.util.Log;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageCapture;
@@ -14,8 +15,6 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.storage.FirebaseStorage;
-import com.google.firebase.storage.StorageReference;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -25,20 +24,27 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Prend une photo discrète avec la caméra frontale via CameraX.
+ * Prend une photo discrète avec la caméra frontale via CameraX, puis la
+ * stocke directement dans Firestore en Base64 (et non dans Firebase Storage,
+ * qui nécessite le forfait payant Blaze — voir README.md).
  *
- * Remplace l'ancienne implémentation basée sur android.hardware.Camera
- * (dépréciée depuis l'API 21, peu fiable sur les appareils récents) et sur
- * AsyncTask (déprécié depuis l'API 30).
+ * Un document Firestore est limité à 1 Mo : la photo est donc fortement
+ * compressée (640x480, JPEG qualité 60), ce qui donne généralement quelques
+ * dizaines de Ko, largement sous la limite.
  *
  * Note : depuis Android 9 (caméra) et Android 12 (micro), le système affiche
- * un indicateur visuel obligatoire pendant l'utilisation — la capture n'est
- * donc pas invisible pour quelqu'un qui regarde l'écran à ce moment précis.
+ * un indicateur visuel obligatoire pendant l'utilisation de la caméra — la
+ * capture n'est donc pas invisible pour quelqu'un qui regarde l'écran à ce
+ * moment précis.
  */
 public class CameraHelper {
 
     private static final String TAG = "CameraHelper";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+
+    // Marge de sécurité sous la limite de 1 Mo par document Firestore
+    // (le Base64 gonfle la taille d'environ 33% par rapport aux octets bruts).
+    private static final int MAX_PHOTO_BYTES = 700_000;
 
     public static void takeSecretPhoto(Context context, LifecycleOwner lifecycleOwner, String deviceId) {
         Context appContext = context.getApplicationContext();
@@ -68,7 +74,7 @@ public class CameraHelper {
                     @Override
                     public void onImageSaved(androidx.camera.core.ImageCapture.OutputFileResults outputFileResults) {
                         try {
-                            processAndUpload(appContext, photoFile, deviceId);
+                            processAndSave(appContext, photoFile, deviceId);
                         } finally {
                             provider.unbindAll();
                         }
@@ -86,7 +92,7 @@ public class CameraHelper {
         }, ContextCompat.getMainExecutor(appContext));
     }
 
-    private static void processAndUpload(Context appContext, File photoFile, String deviceId) {
+    private static void processAndSave(Context appContext, File photoFile, String deviceId) {
         try {
             Bitmap bitmap = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
             if (bitmap == null) {
@@ -95,9 +101,27 @@ public class CameraHelper {
             }
             Bitmap scaled = Bitmap.createScaledBitmap(bitmap, 640, 480, false);
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            scaled.compress(Bitmap.CompressFormat.JPEG, 60, baos);
-            uploadPhotoToStorage(appContext, baos.toByteArray(), deviceId);
+            // On réduit la qualité JPEG progressivement si besoin pour rester
+            // sous la limite de taille d'un document Firestore.
+            byte[] jpegBytes = null;
+            for (int quality : new int[]{60, 45, 30, 20}) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                scaled.compress(Bitmap.CompressFormat.JPEG, quality, baos);
+                byte[] candidate = baos.toByteArray();
+                if (candidate.length <= MAX_PHOTO_BYTES) {
+                    jpegBytes = candidate;
+                    break;
+                }
+                jpegBytes = candidate; // garde la dernière tentative même si trop grande
+            }
+
+            if (jpegBytes == null || jpegBytes.length > MAX_PHOTO_BYTES) {
+                Log.e(TAG, "Photo trop volumineuse même après compression, abandon.");
+                return;
+            }
+
+            String base64Photo = Base64.encodeToString(jpegBytes, Base64.NO_WRAP);
+            saveToFirestore(deviceId, base64Photo);
         } catch (Exception e) {
             Log.e(TAG, "Erreur traitement photo: " + e.getMessage());
         } finally {
@@ -106,22 +130,13 @@ public class CameraHelper {
         }
     }
 
-    private static void uploadPhotoToStorage(Context context, byte[] compressedData, String deviceId) {
-        StorageReference storageRef = FirebaseStorage.getInstance()
-                .getReference("devices/" + deviceId + "/photo.jpg");
+    private static void saveToFirestore(String deviceId, String base64Photo) {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("photoBase64", base64Photo);
+        updates.put("lastPhotoAt", System.currentTimeMillis());
 
-        storageRef.putBytes(compressedData)
-                .addOnSuccessListener(taskSnapshot -> {
-                    // On ne duplique plus la photo en Base64 dans Firestore (coût + limite de
-                    // taille de document) : seule la référence Storage est stockée.
-                    Map<String, Object> updates = new HashMap<>();
-                    updates.put("photoUrl", "devices/" + deviceId + "/photo.jpg");
-                    updates.put("lastPhotoAt", System.currentTimeMillis());
-
-                    FirebaseFirestore.getInstance().collection("devices").document(deviceId)
-                            .update(updates)
-                            .addOnFailureListener(e -> Log.e(TAG, "Erreur Firestore: " + e.getMessage()));
-                })
-                .addOnFailureListener(e -> Log.e(TAG, "Erreur Storage: " + e.getMessage()));
+        FirebaseFirestore.getInstance().collection("devices").document(deviceId)
+                .update(updates)
+                .addOnFailureListener(e -> Log.e(TAG, "Erreur Firestore: " + e.getMessage()));
     }
 }

@@ -14,7 +14,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
-import android.media.MediaRecorder;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -40,8 +39,6 @@ import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.FirebaseFirestoreSettings;
 import com.google.firebase.firestore.ListenerRegistration;
-import com.google.firebase.storage.FirebaseStorage;
-import com.google.firebase.storage.StorageReference;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -60,10 +57,6 @@ public class TheftService extends LifecycleService {
     private SharedPreferences prefs;
     private ListenerRegistration registration;
 
-    private MediaRecorder mediaRecorder;
-    private String audioFilePath;
-    private Handler audioHandler;
-    private Runnable audioRunnable;
 
     @Override
     public void onCreate() {
@@ -117,9 +110,6 @@ public class TheftService extends LifecycleService {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-            }
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                 types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
             }
@@ -190,7 +180,6 @@ public class TheftService extends LifecycleService {
         }
 
         CameraHelper.takeSecretPhoto(this, this, deviceId);
-        startSecretAudioRecording();
         openAlarmScreen();
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -266,76 +255,11 @@ public class TheftService extends LifecycleService {
         }
     }
 
-    private void startSecretAudioRecording() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        stopAndUploadAudio();
-
-        audioFilePath = getFilesDir().getAbsolutePath() + "/thief_audio.3gp";
-        mediaRecorder = new MediaRecorder();
-        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
-        mediaRecorder.setOutputFile(audioFilePath);
-        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
-
-        try {
-            mediaRecorder.prepare();
-            mediaRecorder.start();
-
-            audioHandler = new Handler(Looper.getMainLooper());
-            audioRunnable = this::stopAndUploadAudio;
-            audioHandler.postDelayed(audioRunnable, 30000);
-        } catch (Exception e) {
-            Log.e("TheftService", "Erreur Audio: " + e.getMessage());
-            try {
-                mediaRecorder.release();
-            } catch (Exception ignored) {}
-            mediaRecorder = null;
-        }
-    }
-
-    private void stopAndUploadAudio() {
-        if (audioHandler != null && audioRunnable != null) {
-            audioHandler.removeCallbacks(audioRunnable);
-        }
-        if (mediaRecorder == null) return;
-        try {
-            mediaRecorder.stop();
-            mediaRecorder.release();
-            mediaRecorder = null;
-
-            File audioFile = new File(audioFilePath);
-            if (audioFile.exists() && audioFile.length() > 0) {
-                StorageReference audioRef = FirebaseStorage.getInstance()
-                        .getReference("devices/" + deviceId + "/audio.3gp");
-                android.net.Uri fileUri = android.net.Uri.fromFile(audioFile);
-
-                audioRef.putFile(fileUri)
-                        .addOnSuccessListener(taskSnapshot -> {
-                            Map<String, Object> data = new HashMap<>();
-                            data.put("audioUrl", "devices/" + deviceId + "/audio.3gp");
-                            data.put("lastAudioAt", System.currentTimeMillis());
-                            db.collection("devices").document(deviceId).update(data);
-                        })
-                        .addOnFailureListener(e -> Log.e("TheftService", "Erreur Upload Audio: " + e.getMessage()));
-            }
-        } catch (Exception e) {
-            Log.e("TheftService", "Erreur arrêt audio: " + e.getMessage());
-            try {
-                if (mediaRecorder != null) mediaRecorder.release();
-            } catch (Exception ignored) {}
-            mediaRecorder = null;
-        }
-    }
-
     private void stopAlarmAndGPS() {
         isTheftActive = false;
         prefs.edit().putBoolean("is_theft_active", false).apply();
 
         if (volumeHandler != null && volumeRunnable != null) volumeHandler.removeCallbacks(volumeRunnable);
-
-        if (audioHandler != null && audioRunnable != null) {
-            audioHandler.removeCallbacks(audioRunnable);
-        }
 
         if (ringtone != null) {
             if (ringtone.isPlaying()) ringtone.stop();
@@ -348,14 +272,6 @@ public class TheftService extends LifecycleService {
 
         if (fusedLocationClient != null && locationCallback != null) {
             fusedLocationClient.removeLocationUpdates(locationCallback);
-        }
-
-        if (mediaRecorder != null) {
-            try {
-                mediaRecorder.stop();
-                mediaRecorder.release();
-            } catch (Exception e) { e.printStackTrace(); }
-            mediaRecorder = null;
         }
     }
 
