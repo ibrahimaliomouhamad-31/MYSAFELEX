@@ -19,14 +19,24 @@ service cloud.firestore {
       // Création : uniquement si le document n'existe pas encore et que
       // l'appareil s'enregistre comme son propre ownerUid.
       allow create: if request.auth != null
-                    && request.resource.data.ownerUid == request.auth.uid;
+                    && request.resource.data.ownerUid == request.auth.uid
+                    // Le matricule sert de clé : on refuse les champs sensibles
+                    // (photo/position/token) à la création — valeurs sûres uniquement.
+                    && request.resource.data.status == "securise"
+                    && !("photoBase64" in request.resource.data)
+                    && !("pinHash" in request.resource.data)
+                    && !("pin_code" in request.resource.data);
 
       // Lecture / mise à jour : uniquement le propriétaire d'origine.
       // (resource.data fait référence au document AVANT l'écriture, donc
       // même si quelqu'un essaie d'écraser ownerUid, la vérification porte
       // toujours sur le vrai propriétaire existant.)
       allow read, update: if request.auth != null
-                    && resource.data.ownerUid == request.auth.uid;
+                    && resource.data.ownerUid == request.auth.uid
+                    // On interdit de changer de propriétaire ou d'écrire un PIN.
+                    && request.resource.data.ownerUid == resource.data.ownerUid
+                    && !("pinHash" in request.resource.data)
+                    && !("pin_code" in request.resource.data);
 
       allow delete: if false;
     }

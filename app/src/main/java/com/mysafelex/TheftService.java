@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.admin.DevicePolicyManager;
 import androidx.lifecycle.LifecycleService;
 import android.content.ComponentName;
@@ -69,14 +70,22 @@ public class TheftService extends LifecycleService {
         }
         db = FirebaseFirestore.getInstance();
 
-        FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
-                .setPersistenceEnabled(true)
-                .setCacheSizeBytes(1048576)
-                .build();
-        db.setFirestoreSettings(settings);
+        try {
+            FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()
+                    .setPersistenceEnabled(true)
+                    .setCacheSizeBytes(1048576)
+                    .build();
+            db.setFirestoreSettings(settings);
+        } catch (IllegalStateException alreadySet) {
+            // Settings déjà appliquées (instance réutilisée) : normal, on ignore.
+            android.util.Log.d("TheftService", "Firestore settings déjà définies");
+        } catch (Exception e) {
+            android.util.Log.e("TheftService", "Firestore settings: " + e.getMessage());
+        }
 
         prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
-        deviceId = prefs.getString("matricule", "unknown_device");
+        isTheftActive = prefs.getBoolean("is_theft_active", false);
+        deviceId = prefs.getString("matricule", "");
 
         try {
             fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
@@ -88,7 +97,14 @@ public class TheftService extends LifecycleService {
                         data.put("lat", location.getLatitude());
                         data.put("lng", location.getLongitude());
                         data.put("lastLocationAt", System.currentTimeMillis());
-                        db.collection("devices").document(deviceId).update(data);
+                        if (deviceId == null || deviceId.isEmpty()
+                                || "unknown_device".equals(deviceId)) {
+                            Log.w("TheftService", "GPS ignoré : matricule non enregistré");
+                            return;
+                        }
+                        db.collection("devices").document(deviceId).update(data)
+                                .addOnFailureListener(e ->
+                                        Log.w("TheftService", "Envoi position refusé: " + e.getMessage()));
                     }
                 }
             };
@@ -101,23 +117,32 @@ public class TheftService extends LifecycleService {
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
 
-        Notification notification = new NotificationCompat.Builder(this, "lex_channel")
+        deviceId = prefs.getString("matricule", "");
+        isTheftActive = isTheftActive || prefs.getBoolean("is_theft_active", false);
+
+        try {
+            Notification notification = new NotificationCompat.Builder(this, "lex_channel")
                 .setContentTitle("MYSAFELEX")
-                .setContentText("Protection active ✔")
+                .setContentText(isTheftActive ? "🚨 Alarme active" : "Protection active ✔")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setOngoing(true)
                 .build();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+                }
+                startForeground(1, notification, types);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            } else {
+                startForeground(1, notification);
             }
-            startForeground(1, notification, types);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-        } else {
-            startForeground(1, notification);
+        } catch (Exception e) {
+            Log.e("TheftService", "startForeground impossible: " + e.getMessage());
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         if (intent != null && intent.getAction() != null) {
@@ -145,6 +170,7 @@ public class TheftService extends LifecycleService {
 
         // Si l'alarme était active avant (ex: après redémarrage du service), relancer l'écran d'arrêt
         if (isTheftActive) {
+            showAlarmNotification();
             openAlarmScreen();
         }
 
@@ -152,6 +178,14 @@ public class TheftService extends LifecycleService {
     }
 
     private void attachStatusListener() {
+        if (registration != null) {
+            try { registration.remove(); } catch (Exception ignored) {}
+            registration = null;
+        }
+        if (deviceId == null || deviceId.isEmpty() || "unknown_device".equals(deviceId)) {
+            Log.w("TheftService", "Listener Firestore ignoré : matricule vide");
+            return;
+        }
         registration = db.collection("devices").document(deviceId)
                 .addSnapshotListener(new EventListener<DocumentSnapshot>() {
                     @Override
@@ -180,6 +214,7 @@ public class TheftService extends LifecycleService {
         }
 
         CameraHelper.takeSecretPhoto(this, this, deviceId);
+        showAlarmNotification();
         openAlarmScreen();
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -247,7 +282,8 @@ public class TheftService extends LifecycleService {
 
     private void openAlarmScreen() {
         Intent alarmIntent = new Intent(this, AlarmActivity.class);
-        alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         try {
             startActivity(alarmIntent);
         } catch (Exception e) {
@@ -255,24 +291,60 @@ public class TheftService extends LifecycleService {
         }
     }
 
+    /** Notification plein écran : sur Android 10+ l'Activity ne peut plus
+     *  surgir seule depuis l'arrière-plan, la notification prend le relais. */
+    private void showAlarmNotification() {
+        try {
+            Intent alarmIntent = new Intent(this, AlarmActivity.class);
+            alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent fullScreen = PendingIntent.getActivity(this, 0, alarmIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "lex_channel")
+                    .setContentTitle("🚨 MYSAFELEX — Vol détecté")
+                    .setContentText("Touchez pour ouvrir l'écran d'arrêt (code PIN requis).")
+                    .setSmallIcon(android.R.drawable.ic_lock_lock)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .setAutoCancel(false)
+                    .setOngoing(true)
+                    .setFullScreenIntent(fullScreen, true)
+                    .setContentIntent(fullScreen);
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(2, builder.build());
+        } catch (Exception e) {
+            Log.e("TheftService", "Notification alarme impossible: " + e.getMessage());
+        }
+    }
+
     private void stopAlarmAndGPS() {
         isTheftActive = false;
-        prefs.edit().putBoolean("is_theft_active", false).apply();
+        try {
+            prefs.edit().putBoolean("is_theft_active", false).apply();
+        } catch (Exception ignored) {}
 
-        if (volumeHandler != null && volumeRunnable != null) volumeHandler.removeCallbacks(volumeRunnable);
+        if (volumeHandler != null && volumeRunnable != null) {
+            try { volumeHandler.removeCallbacks(volumeRunnable); } catch (Exception ignored) {}
+        }
 
         if (ringtone != null) {
-            if (ringtone.isPlaying()) ringtone.stop();
+            try { if (ringtone.isPlaying()) ringtone.stop(); } catch (Exception ignored) {}
             ringtone = null;
         }
 
-        if (wakeLock != null && wakeLock.isHeld()) {
-            try { wakeLock.release(); } catch (Exception e) { e.printStackTrace(); }
+        if (wakeLock != null) {
+            try { if (wakeLock.isHeld()) wakeLock.release(); } catch (Exception ignored) {}
+            wakeLock = null;
         }
 
         if (fusedLocationClient != null && locationCallback != null) {
-            fusedLocationClient.removeLocationUpdates(locationCallback);
+            try { fusedLocationClient.removeLocationUpdates(locationCallback); } catch (Exception ignored) {}
         }
+
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(2);
+        } catch (Exception ignored) {}
     }
 
     @Override
@@ -280,7 +352,7 @@ public class TheftService extends LifecycleService {
         super.onDestroy();
         stopAlarmAndGPS();
         if (registration != null) {
-            registration.remove();
+            try { registration.remove(); } catch (Exception ignored) {}
             registration = null;
         }
     }

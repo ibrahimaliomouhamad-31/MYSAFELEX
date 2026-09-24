@@ -36,23 +36,50 @@ public class AlarmActivity extends AppCompatActivity {
         }
 
         btnStop.setOnClickListener(v -> {
-            String pin = editPin.getText().toString();
-            String savedPin = prefs.getString("pin_code", "");
+            String pin = editPin.getText().toString().trim();
+            String savedPinHash = prefs.getString("pin_hash", "");
+            String legacyPin = prefs.getString("pin_code", "");
+            // Migration une seule fois : PIN clair -> hash.
+            if (savedPinHash.isEmpty() && !legacyPin.isEmpty()) {
+                try {
+                    savedPinHash = SecurityUtils.hashPin(this, legacyPin);
+                    prefs.edit().putString("pin_hash", savedPinHash).remove("pin_code").apply();
+                } catch (Exception e) {
+                    android.util.Log.e("AlarmActivity", "Migration PIN impossible", e);
+                }
+            }
 
-            if (savedPin.isEmpty()) {
+            if (savedPinHash.isEmpty()) {
                 Toast.makeText(this, "Aucun code enregistré. Contactez la direction.", Toast.LENGTH_LONG).show();
                 return;
             }
 
-            if (pin.equals(savedPin)) {
+            if (SecurityUtils.verifyPin(this, pin, savedPinHash)) {
                 Intent stopIntent = new Intent(this, TheftService.class);
                 stopIntent.setAction("STOP_THEFT");
-                startService(stopIntent);
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        startForegroundService(stopIntent);
+                    } else {
+                        startService(stopIntent);
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("AlarmActivity", "STOP_THEFT impossible: " + e.getMessage());
+                }
 
                 // Prévenir la console Firebase aussi
-                com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                        .collection("devices").document(matricule)
-                        .update("status", "securise");
+                try {
+                    String stopMatricule = prefs.getString("matricule", "");
+                    if (!stopMatricule.isEmpty()) {
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                .collection("devices").document(stopMatricule)
+                                .update("status", "securise")
+                                .addOnFailureListener(e -> android.util.Log.w("AlarmActivity",
+                                        "MAJ Firestore refusée: " + e.getMessage()));
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("AlarmActivity", "Firestore: " + e.getMessage());
+                }
 
                 Toast.makeText(this, "Alarme arrêtée ✅", Toast.LENGTH_SHORT).show();
                 finish();

@@ -19,27 +19,38 @@ public class MessagingService extends FirebaseMessagingService {
 
         if (remoteMessage.getData().size() > 0) {
             String action = remoteMessage.getData().get("action");
-            if (action != null && action.equals("VOL")) {
+            if ("VOL".equals(action)) {
                 Intent intent = new Intent(this, TheftService.class);
                 intent.setAction("START_THEFT");
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent);
-                } else {
-                    startService(intent);
-                }
+                startTheftService(intent);
+            } else if ("VOL_STOP".equals(action) || "STOP".equals(action)) {
+                Intent intent = new Intent(this, TheftService.class);
+                intent.setAction("STOP_THEFT");
+                startTheftService(intent);
             }
         }
     }
 
-    // FAILLE 3 : Mise à jour du token mort
+    private void startTheftService(Intent intent) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+        } catch (Exception e) {
+            Log.e("MessagingService", "Démarrage TheftService impossible: " + e.getMessage());
+        }
+    }
+
     @Override
     public void onNewToken(@NonNull String token) {
         super.onNewToken(token);
         
         SharedPreferences prefs = getSharedPreferences("lex_prefs", MODE_PRIVATE);
-        String matricule = prefs.getString("matricule", null);
-        
-        if (matricule != null) {
+        String matricule = prefs.getString("matricule", "");
+
+        if (!matricule.isEmpty()) {
             AuthManager.ensureSignedIn(new AuthManager.Callback() {
                 @Override
                 public void onReady(String uid) {
