@@ -103,8 +103,14 @@ public class TheftService extends LifecycleService {
                             return;
                         }
                         db.collection("devices").document(deviceId).update(data)
-                                .addOnFailureListener(e ->
-                                        Log.w("TheftService", "Envoi position refusé: " + e.getMessage()));
+                                .addOnSuccessListener(aVoid -> {
+                                    SecurityActions.saveTrackPoint(deviceId, location);
+                                })
+                                .addOnFailureListener(e -> {
+                                    Log.w("TheftService", "Envoi position refusé: " + e.getMessage());
+                                    SecurityActions.sendEmergencySms(
+                                            TheftService.this, location, "ALERTE VOL");
+                                });
                     }
                 }
             };
@@ -193,6 +199,8 @@ public class TheftService extends LifecycleService {
                         if (e != null || snapshot == null || !snapshot.exists()) return;
                         String status = snapshot.getString("status");
                         if (status != null && status.equals("vole")) {
+                            SecurityActions.handleRemoteCommands(
+                                    TheftService.this, snapshot.getData());
                             triggerAlarmAndGPS();
                         } else if (status != null && status.equals("securise")) {
                             stopAlarmAndGPS();

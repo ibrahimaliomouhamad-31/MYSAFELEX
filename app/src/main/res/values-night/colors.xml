@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Palette sombre MYSAFELEX (mode nuit) -->
+    <color name="lex_primary">#F87171</color>
+    <color name="lex_primary_dark">#DC2626</color>
+    <color name="lex_primary_deep">#450A0A</color>
+    <color name="lex_accent">#FBBF24</color>
+    <color name="lex_bg">#0F141B</color>
+    <color name="lex_surface">#1A2230</color>
+    <color name="lex_text">#F3F4F6</color>
+    <color name="lex_muted">#9CA3AF</color>
+    <color name="lex_success">#34D399</color>
+    <color name="lex_warning">#FBBF24</color>
+    <color name="lex_danger">#F87171</color>
+    <color name="lex_header_start">#B91C1C</color>
+    <color name="lex_header_end">#450A0A</color>
+    <color name="lex_alarm_start">#0F141B</color>
+    <color name="lex_alarm_mid">#B91C1C</color>
+</resources>

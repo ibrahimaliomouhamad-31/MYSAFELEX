@@ -1,114 +1,277 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#FAFAFA">
+    android:background="@color/lex_bg">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:gravity="center"
-        android:padding="30dp">
+        android:padding="20dp">
 
-        <!-- Logo -->
-        <ImageView
-            android:layout_width="90dp"
-            android:layout_height="90dp"
-            android:src="@drawable/logo"
-            android:contentDescription="Logo MYSAFELEX"
-            android:layout_marginBottom="10dp" />
-
-        <!-- Titre -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="MYSAFELEX"
-            android:textSize="36sp"
-            android:textStyle="bold"
-            android:textColor="#D32F2F"
-            android:letterSpacing="0.05" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Lycée d'Excellence de Tessaoua"
-            android:textSize="15sp"
-            android:textColor="#666666"
-            android:layout_marginBottom="25dp" />
-
-        <!-- Carte de statut -->
-        <androidx.cardview.widget.CardView
-            xmlns:app="http://schemas.android.com/apk/res-auto"
+        <!-- En-tete hero -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="4dp"
-            android:layout_marginBottom="25dp">
+            app:cardCornerRadius="28dp"
+            app:cardElevation="0dp"
+            android:layout_marginBottom="16dp">
 
-            <TextView
-                android:id="@+id/txtStatusCard"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🟠 En attente d'inscription"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="#333333"
-                android:gravity="center"
-                android:padding="18dp" />
-        </androidx.cardview.widget.CardView>
+                android:orientation="vertical"
+                android:background="@drawable/bg_header_gradient"
+                android:padding="24dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:src="@drawable/logo"
+                        android:contentDescription="Logo MYSAFELEX"
+                        android:background="@drawable/bg_pill"
+                        android:padding="6dp" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="MYSAFELEX"
+                            android:textSize="24sp"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/white"
+                            android:letterSpacing="0.06" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Lycee d Excellence de Tessaoua"
+                            android:textSize="13sp"
+                            android:textColor="#FFD9D9" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/txtVersionPill"
+                        style="@style/Lex.Pill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="v1.4" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Protection anti-vol de l internat"
+                    android:textSize="14sp"
+                    android:textColor="@android:color/white"
+                    android:layout_marginTop="16dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Carte de statut -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="2dp"
+            app:cardBackgroundColor="@color/lex_surface"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="18dp">
+
+                <View
+                    android:id="@+id/dotStatus"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:background="@drawable/dot_orange"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/txtStatusTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="En attente d inscription"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/lex_text" />
+
+                    <TextView
+                        android:id="@+id/txtStatusCard"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Renseignez votre matricule pour activer la protection."
+                        android:textSize="13sp"
+                        android:textColor="@color/lex_muted"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Checklist protection -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="2dp"
+            app:cardBackgroundColor="@color/lex_surface"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Bouclier de protection"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/lex_text"
+                    android:layout_marginBottom="10dp" />
+
+                <TextView
+                    android:id="@+id/txtShieldLoc"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Localisation"
+                    android:textSize="13sp"
+                    android:textColor="@color/lex_muted"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/txtShieldCam"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Photo secrete"
+                    android:textSize="13sp"
+                    android:textColor="@color/lex_muted"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/txtShieldSim"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Alerte changement SIM"
+                    android:textSize="13sp"
+                    android:textColor="@color/lex_muted"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/txtShieldAdmin"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Verrouillage appareil"
+                    android:textSize="13sp"
+                    android:textColor="@color/lex_muted" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Matricule -->
         <com.google.android.material.textfield.TextInputLayout
-            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Matricule LEX"
-            app:boxCornerRadiusTopStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusBottomEnd="12dp">
+            app:startIconDrawable="@android:drawable/ic_menu_myplaces"
+            app:helperText="3 a 30 lettres, chiffres ou tirets"
+            app:helperTextTextColor="@color/lex_muted">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editMatricule"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="text" />
+                android:inputType="text"
+                android:maxLength="30" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Code PIN -->
         <com.google.android.material.textfield.TextInputLayout
-            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="15dp"
+            android:layout_marginTop="12dp"
             android:hint="Code PIN"
             app:passwordToggleEnabled="true"
-            app:boxCornerRadiusTopStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusBottomEnd="12dp">
+            app:startIconDrawable="@android:drawable/ic_lock_lock"
+            app:helperText="4 a 12 caracteres, sans espaces"
+            app:helperTextTextColor="@color/lex_muted">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editInviteCode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="textPassword" />
+                android:inputType="textPassword"
+                android:maxLength="12" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Numero de secours (SMS si pas de reseau) -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Numero de secours (optionnel)"
+            app:startIconDrawable="@android:drawable/ic_dialog_email"
+            app:helperText="SMS envoye si Internet est coupe"
+            app:helperTextTextColor="@color/lex_muted">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editEmergencyNumber"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="phone"
+                android:maxLength="20" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Bouton -->
         <com.google.android.material.button.MaterialButton
-            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:id="@+id/btnLogin"
             android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:layout_marginTop="30dp"
-            android:text="SE CONNECTER"
-            android:textSize="18sp"
+            android:layout_height="58dp"
+            android:layout_marginTop="24dp"
+            android:text="ACTIVER LA PROTECTION"
+            android:textSize="15sp"
             android:textStyle="bold"
-            app:backgroundTint="#D32F2F"
-            app:cornerRadius="16dp" />
+            app:backgroundTint="@color/lex_primary"
+            app:cornerRadius="16dp"
+            app:icon="@android:drawable/ic_lock_lock"
+            app:iconTint="@android:color/white" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnHelp"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:text="Comment ca marche ?"
+            app:icon="@android:drawable/ic_menu_help" />
 
         <TextView
             android:id="@+id/txtToken"
@@ -116,9 +279,9 @@
             android:layout_height="wrap_content"
             android:text="Initialisation..."
             android:textSize="12sp"
-            android:textColor="#999999"
+            android:textColor="@color/lex_muted"
             android:gravity="center"
-            android:layout_marginTop="25dp"
+            android:layout_marginTop="20dp"
             android:breakStrategy="simple" />
     </LinearLayout>
 </ScrollView>

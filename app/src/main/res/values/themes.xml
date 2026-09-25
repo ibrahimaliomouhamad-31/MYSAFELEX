@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Mysafelex" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/lex_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorSecondary">@color/lex_accent</item>
+        <item name="android:colorBackground">@color/lex_bg</item>
+        <item name="colorSurface">@color/lex_surface</item>
+        <item name="colorOnSurface">@color/lex_text</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.Material3.HeadlineSmall</item>
+    </style>
+
+    <style name="Lex.Pill" parent="">
+        <item name="android:background">@drawable/bg_pill</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+</resources>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MYSAFELEX — Console Direction</title>
+<style>
+  :root { --red: #B71C1C; --red2: #E53935; --bg: #F3F4F8; --card: #fff;
+          --text: #1A1C21; --muted: #6B7280; --green: #16A34A; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { background: linear-gradient(135deg, var(--red2), var(--red));
+           color: #fff; padding: 28px 20px; }
+  header h1 { margin: 0; font-size: 24px; letter-spacing: 1px; }
+  header p { margin: 6px 0 0; opacity: .9; font-size: 14px; }
+  main { max-width: 1100px; margin: -18px auto 40px; padding: 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border-radius: 16px; padding: 16px;
+          box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .dot.vole { background: #DC2626; } .dot.securise { background: var(--green); }
+  .matricule { font-weight: 700; font-size: 17px; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 6px; line-height: 1.5; }
+  .meta a { color: var(--red); }
+  .photo { width: 100%; border-radius: 12px; margin-top: 10px; display: none; }
+  .btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button { border: 0; border-radius: 10px; padding: 9px 12px; font-weight: 700;
+           cursor: pointer; font-size: 13px; }
+  button.alarm { background: var(--red); color: #fff; }
+  button.ok { background: var(--green); color: #fff; }
+  button.lock { background: #111827; color: #fff; }
+  button.ghost { background: #EEF0F4; color: var(--text); }
+  #toolbar { display: flex; gap: 8px; margin: 18px 0 12px; flex-wrap: wrap; }
+  #toolbar input, #toolbar select { padding: 9px 12px; border-radius: 10px;
+    border: 1px solid #D6D9E0; font-size: 14px; background: #fff; }
+  #status { color: var(--muted); font-size: 13px; margin: 8px 0 12px; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--red); font-weight: 700; font-size: 13px; }
+  ol.track { max-height: 160px; overflow: auto; font-size: 12px; color: var(--muted);
+             padding-left: 20px; }
+  .warn { background: #FEF3C7; border: 1px solid #F59E0B; color: #92400E;
+          border-radius: 12px; padding: 12px 14px; font-size: 13px; margin: 14px 0; }
+  code { background: #EEF0F4; padding: 1px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MYSAFELEX — Console Direction</h1>
+  <p>Internat du lycee d'excellence de Tessaoua — forfait Firebase gratuit</p>
+</header>
+<main>
+  <div id="toolbar">
+    <input id="fSearch" type="search" placeholder="Rechercher un matricule…">
+    <select id="fStatus">
+      <option value="">Tous les statuts</option>
+      <option value="vole">Vole (alarme)</option>
+      <option value="securise">Securise</option>
+    </select>
+    <button class="ghost" id="btnReload">Actualiser</button>
+    <button class="ghost" id="btnExport">Exporter CSV</button>
+  </div>
+  <div id="status">Connexion a Firestore…</div>
+  <div class="warn">
+    <b>Regles Firestore :</b> si rien ne s'affiche, ajoutez la collection
+    <code>staff</code> dans <code>firestore.rules</code> (voir README) puis
+    redéployez les regles. Creez ensuite un compte direction dans
+    Authentication &gt; Users et son document <code>staff/{uid}</code>.
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="card" style="margin-top:16px">
+    <b>Mode d'emploi</b>
+    <div class="meta">
+      1) <b>Declencher</b> (rouge) : sonnerie + photo secrete + position.<br>
+      2) <b>Verrouiller</b> (noir) : verrouille l'ecran aussitot.<br>
+      3) <b>Arreter</b> (vert) : quand l'appareil est recupere.<br>
+      4) <b>Historique</b> : trace des 200 dernieres positions (liens Maps).
+    </div>
+  </div>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+  import { getFirestore, collection, doc, updateDoc, getDocs,
+           query, orderBy, limit, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  // TODO(direction) : collez la config web du projet Firebase
+  // (Console > Parametres du projet > Vos applications > Web).
+  const firebaseConfig = {
+    apiKey: "COLLEZ_VOTRE_CLE",
+    authDomain: "VOTRE-PROJET.firebaseapp.com",
+    projectId: "VOTRE-PROJET",
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const grid = document.getElementById("grid");
+  const statusEl = document.getElementById("status");
+  const fSearch = document.getElementById("fSearch");
+  const fStatus = document.getElementById("fStatus");
+  const btnExport = document.getElementById("btnExport");
+  let devices = [];
+  let unsubs = [];
+  let lastTrack = [];
+
+  const email = prompt("Email du compte direction :");
+  const pass = prompt("Mot de passe direction :");
+  if (!email || !pass) {
+    statusEl.textContent = "Connexion annulee : rechargez la page.";
+  } else {
+    signInWithEmailAndPassword(auth, email, pass).catch(e => {
+      statusEl.textContent = "Echec connexion : " + e.message;
+    });
+  }
+
+  onAuthStateChanged(auth, user => {
+    if (!user) return;
+    statusEl.textContent = "Connecte : " + user.email + " — ecoute…";
+    loadAll();
+  });
+
+  document.getElementById("btnReload").onclick = loadAll;
+  fSearch.oninput = render;
+  fStatus.onchange = render;
+  btnExport.onclick = () => {
+    const rows = [["matricule", "status", "lat", "lng", "lastLocationAt",
+                   "lastPhotoAt", "simChanged", "alertAt"]];
+    devices.forEach(d => rows.push([
+      d.id, d.status || "", d.lat ?? "", d.lng ?? "",
+      d.lastLocationAt ? new Date(d.lastLocationAt).toISOString() : "",
+      d.lastPhotoAt ? new Date(d.lastPhotoAt).toISOString() : "",
+      d.simChanged ? "oui" : "non",
+      d.alertAt ? new Date(d.alertAt).toISOString() : "",
+    ]));
+    const csv = rows.map(r => r.map(v =>
+      '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mysafelex-appareils.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+
+  async function loadAll() {
+    unsubs.forEach(u => { try { u(); } catch (e) {} });
+    unsubs = [];
+    try {
+      const snap = await getDocs(collection(db, "devices"));
+      devices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      statusEl.textContent = devices.length + " appareil(s) surveille(s).";
+      devices.forEach(dev => {
+        try {
+          const u = onSnapshot(doc(db, "devices", dev.id), s => {
+            if (!s.exists()) return;
+            const i = devices.findIndex(x => x.id === dev.id);
+            if (i >= 0) { devices[i] = { id: dev.id, ...s.data() }; render(); }
+          });
+          unsubs.push(u);
+        } catch (e) {}
+      });
+      render();
+    } catch (e) {
+      statusEl.textContent = "Erreur lecture (regles ?) : " + e.message;
+    }
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return "—";
+    try { return new Date(ts).toLocaleString("fr-FR"); } catch (e) { return String(ts); }
+  }
+
+  function render() {
+    const q = (fSearch.value || "").trim().toLowerCase();
+    const st = fStatus.value;
+    grid.innerHTML = "";
+    devices
+      .filter(d => (!q || d.id.toLowerCase().includes(q)) && (!st || d.status === st))
+      .sort((a, b) => (b.alertAt || b.lastLocationAt || 0) - (a.alertAt || a.lastLocationAt || 0))
+      .forEach(d => grid.appendChild(card(d)));
+  }
+
+  function card(d) {
+    const el = document.createElement("div");
+    el.className = "card";
+    const vole = d.status === "vole";
+    let html = '<div class="row"><span class="dot ' + (vole ? "vole" : "securise") +
+      '"></span><span class="matricule">' + escapeHtml(d.id) + "</span></div>";
+    html += '<div class="meta">Statut : <b>' + escapeHtml(d.status || "?") + "</b><br>";
+    if (d.lat != null && d.lng != null) {
+      html += 'Position : <a target="_blank" href="https://maps.google.com/?q=' +
+        d.lat + "," + d.lng + '">' + d.lat.toFixed(5) + ", " + d.lng.toFixed(5) +
+        "</a> (" + fmtTime(d.lastLocationAt) + ")<br>";
+    } else {
+      html += "Position : inconnue<br>";
+    }
+    if (d.lastPhotoAt) html += "Photo : " + fmtTime(d.lastPhotoAt) + "<br>";
+    if (d.simChanged) html += "<b>SIM changee !</b> (" + fmtTime(d.alertAt) + ")<br>";
+    html += "</div>";
+    if (d.photoBase64) {
+      html += '<img class="photo" style="display:block" src="data:image/jpeg;base64,' +
+        d.photoBase64 + '" alt="Photo secrete">';
+    }
+    html += '<div class="btns">';
+    html += vole
+      ? '<button class="ok" data-act="stop">Arreter l alarme</button>'
+      : '<button class="alarm" data-act="start">Declencher l alarme</button>';
+    html += '<button class="lock" data-act="lock">Verrouiller l ecran</button>';
+    html += '<button class="ghost" data-act="track">Voir l historique</button></div>';
+    html += '<details style="display:none"><summary>Historique GPS</summary>' +
+      '<ol class="track"></ol></details>';
+    el.innerHTML = html;
+    el.querySelector('[data-act="start"]').onclick = () => setStatus(d.id, "vole");
+    const stopBtn = el.querySelector('[data-act="stop"]');
+    if (stopBtn) stopBtn.onclick = () => setStatus(d.id, "securise");
+    el.querySelector('[data-act="lock"]').onclick = async () => {
+      if (!confirm("Verrouiller l ecran de " + d.id + " ?")) return;
+      await updateDoc(doc(db, "devices", d.id), { lock: true });
+    };
+    el.querySelector('[data-act="track"]').onclick = async (ev) => {
+      const det = el.querySelector("details");
+      const ol = el.querySelector("ol.track");
+      const open = det.style.display === "block";
+      det.style.display = open ? "none" : "block";
+      ev.target.textContent = open ? "Voir l historique" : "Masquer l historique";
+      if (open) return;
+      ol.innerHTML = "<li>Chargement…</li>";
+      try {
+        const snap = await getDocs(
+          query(collection(db, "devices", d.id, "track"), orderBy("at", "desc"), limit(200)));
+        ol.innerHTML = "";
+        if (snap.empty) { ol.innerHTML = "<li>Aucune position enregistree.</li>"; return; }
+        lastTrack = [];
+        snap.forEach(p => {
+          const v = p.data();
+          lastTrack.push({ id: d.id, ...v });
+          const li = document.createElement("li");
+          const a = document.createElement("a");
+          a.target = "_blank";
+          a.href = "https://maps.google.com/?q=" + v.lat + "," + v.lng;
+          a.textContent = Number(v.lat).toFixed(5) + ", " + Number(v.lng).toFixed(5);
+          li.appendChild(a);
+          li.appendChild(document.createTextNode(" — " + fmtTime(v.at)));
+          ol.appendChild(li);
+        });
+        const liCsv = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.className = "ghost";
+        btn.textContent = "Exporter cet historique (CSV)";
+        btn.onclick = () => {
+          const rows = [["matricule", "lat", "lng", "at"]];
+          lastTrack.forEach(v => rows.push([
+            d.id, v.lat, v.lng,
+            v.at ? new Date(v.at).toISOString() : "",
+          ]));
+          const csv = rows.map(r => r.map(x =>
+            '"' + String(x).replace(/"/g, '""') + '"').join(";")).join("\r\n");
+          const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "mysafelex-track-" + d.id + ".csv";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        };
+        liCsv.appendChild(btn);
+        ol.appendChild(liCsv);
+      } catch (e) {
+        ol.innerHTML = "<li>Erreur : " + escapeHtml(e.message) + "</li>";
+      }
+    };
+    return el;
+  }
+
+  async function setStatus(id, status) {
+    const msg = status === "vole"
+      ? "Declencher l ALARME sur " + id + " ?"
+      : "Arreter l alarme de " + id + " ?";
+    if (!confirm(msg)) return;
+    try {
+      await updateDoc(doc(db, "devices", id), { status });
+    } catch (e) {
+      alert("Echec : " + e.message);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+</script>
+</body>
+</html>
+

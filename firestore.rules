@@ -4,16 +4,28 @@ rules_version = '2';
 // `firebase deploy --only firestore:rules` (Firebase CLI).
 //
 // Principe : chaque appareil (document devices/{matricule}) n'est lisible et
-// modifiable QUE par l'utilisateur anonyme (ownerUid) qui l'a créé. Personne
-// d'autre ne peut lire la position, les photos ou l'audio d'un autre élève,
-// ni déclencher/désactiver une alerte à distance depuis l'application.
+// modifiable QUE par l'utilisateur anonyme (ownerUid) qui l'a créé, OU par
+// un compte direction (collection staff/{uid}, voir README). Personne
+// d'autre ne peut lire la position, les photos ou l'historique d'un élève.
 //
-// La direction, elle, continue de modifier le champ "status" directement
-// depuis la console Firebase (qui utilise des accès administrateur et
-// n'est donc pas soumise à ces règles) — aucun changement nécessaire de ce
-// côté pour l'instant.
+// La direction utilise la console web direction-console.html (compte
+// email/mot de passe) pour déclencher/arrêter l'alarme, verrouiller l'écran
+// (champ lock) et consulter l'historique devices/{matricule}/track.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isStaff() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    // Fiche d'un membre de la direction : lisible uniquement par lui-même.
+    // (Créée manuellement par l'admin via la console Firebase.)
+    match /staff/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     match /devices/{matricule} {
 
       // Création : uniquement si le document n'existe pas encore et que
@@ -27,18 +39,40 @@ service cloud.firestore {
                     && !("pinHash" in request.resource.data)
                     && !("pin_code" in request.resource.data);
 
-      // Lecture / mise à jour : uniquement le propriétaire d'origine.
-      // (resource.data fait référence au document AVANT l'écriture, donc
-      // même si quelqu'un essaie d'écraser ownerUid, la vérification porte
-      // toujours sur le vrai propriétaire existant.)
-      allow read, update: if request.auth != null
+      // Lecture : propriétaire OU direction.
+      allow get: if (request.auth != null
+                    && resource.data.ownerUid == request.auth.uid)
+                    || isStaff();
+      allow list: if isStaff();
+
+      // Mise à jour propriétaire : tout sauf changer ownerUid ou écrire un PIN.
+      allow update: if request.auth != null
                     && resource.data.ownerUid == request.auth.uid
-                    // On interdit de changer de propriétaire ou d'écrire un PIN.
                     && request.resource.data.ownerUid == resource.data.ownerUid
                     && !("pinHash" in request.resource.data)
                     && !("pin_code" in request.resource.data);
 
+      // Mise à jour direction : UNIQUEMENT status + lock (jamais position,
+      // photo, token, ownerUid). Le test request.resource.data.diff(...).
+      // affectedKeys().hasOnly([...]) garantit que seuls ces 2 champs bougent.
+      allow update: if isStaff()
+                    && request.resource.data.ownerUid == resource.data.ownerUid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(["status", "lock"]);
+
       allow delete: if false;
+
+      // Historique GPS : le propriétaire écrit, la direction lit.
+      // (La suppression des vieux points par l'appli reste possible
+      // car delete est autorisé au propriétaire uniquement sur track/.)
+      match /track/{pointId} {
+        allow create, delete: if request.auth != null
+                    && get(/databases/$(database)/documents/devices/$(matricule)).data.ownerUid == request.auth.uid;
+        allow read: if (request.auth != null
+                    && get(/databases/$(database)/documents/devices/$(matricule)).data.ownerUid == request.auth.uid)
+                    || isStaff();
+        allow update: if false;
+      }
     }
   }
 }

@@ -31,8 +31,10 @@ import java.util.Map;
 public class MainActivity extends AppCompatActivity {
 
     private EditText editMatricule, editCode;
-    private Button btnLogin;
-    private TextView txtStatus, txtToken;
+    private Button btnLogin, btnHelp;
+    private TextView txtStatus, txtStatusTitle, txtToken;
+    private android.view.View dotStatus;
+    private TextView txtShieldLoc, txtShieldCam, txtShieldSim, txtShieldAdmin;
     private static final int REQUEST_CODE_ENABLE_ADMIN = 1;
     private static final int REQUEST_CODE_PERMS = 101;
     private static final String TAG = "MainActivity";
@@ -53,8 +55,18 @@ public class MainActivity extends AppCompatActivity {
         editMatricule = findViewById(R.id.editMatricule);
         editCode = findViewById(R.id.editInviteCode);
         btnLogin = findViewById(R.id.btnLogin);
+        btnHelp = findViewById(R.id.btnHelp);
         txtToken = findViewById(R.id.txtToken);
         txtStatus = findViewById(R.id.txtStatusCard);
+        txtStatusTitle = findViewById(R.id.txtStatusTitle);
+        dotStatus = findViewById(R.id.dotStatus);
+        txtShieldLoc = findViewById(R.id.txtShieldLoc);
+        txtShieldCam = findViewById(R.id.txtShieldCam);
+        txtShieldSim = findViewById(R.id.txtShieldSim);
+        txtShieldAdmin = findViewById(R.id.txtShieldAdmin);
+        if (btnHelp != null) {
+            btnHelp.setOnClickListener(v -> showHelpDialog());
+        }
 
         currentMatricule = prefs.getString("matricule", "");
         if (!currentMatricule.isEmpty()) {
@@ -80,12 +92,90 @@ public class MainActivity extends AppCompatActivity {
         boolean registered = !prefs.getString("matricule", "").isEmpty();
         boolean theftActive = prefs.getBoolean("is_theft_active", false);
         if (theftActive) {
-            txtStatus.setText("🔴 ALARME ACTIVE — Vol signalé");
+            setStatus("ALARME ACTIVE", "Vol signale - alarme et suivi en cours.",
+                    R.drawable.dot_red);
         } else if (registered) {
-            txtStatus.setText("🟢 Protégé — " + prefs.getString("matricule", ""));
+            setStatus("Protege", "Matricule " + prefs.getString("matricule", ""),
+                    R.drawable.dot_green);
         } else {
-            txtStatus.setText("🟠 En attente d'inscription");
+            setStatus("En attente d inscription",
+                    "Renseignez votre matricule pour activer la protection.",
+                    R.drawable.dot_orange);
         }
+        refreshShield();
+    }
+
+    private void setStatus(String title, String subtitle, int dotRes) {
+        try {
+            if (txtStatusTitle != null) txtStatusTitle.setText(title);
+            if (txtStatus != null) txtStatus.setText(subtitle);
+            if (dotStatus != null) dotStatus.setBackgroundResource(dotRes);
+        } catch (Exception e) {
+            Log.e(TAG, "setStatus: " + e.getMessage());
+        }
+    }
+
+    private void refreshShield() {
+        try {
+            boolean loc = ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean cam = ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+            boolean sim = !prefs.getString("sim_fp", "").isEmpty()
+                    || !prefs.getString("sim_serial", "").isEmpty();
+            boolean admin = isDeviceAdminActive();
+            if (txtShieldLoc != null) txtShieldLoc.setText((loc ? "OK  " : "KO  ") + "Localisation");
+            if (txtShieldCam != null) txtShieldCam.setText((cam ? "OK  " : "KO  ") + "Photo secrete");
+            if (txtShieldSim != null) txtShieldSim.setText((sim ? "OK  " : "--  ") + "Alerte changement SIM");
+            if (txtShieldAdmin != null) txtShieldAdmin.setText((admin ? "OK  " : "KO  ") + "Verrouillage appareil");
+            int ok = getColorCompat(R.color.lex_success);
+            int ko = getColorCompat(R.color.lex_muted);
+            if (txtShieldLoc != null) txtShieldLoc.setTextColor(loc ? ok : ko);
+            if (txtShieldCam != null) txtShieldCam.setTextColor(cam ? ok : ko);
+            if (txtShieldSim != null) txtShieldSim.setTextColor(sim ? ok : ko);
+            if (txtShieldAdmin != null) txtShieldAdmin.setTextColor(admin ? ok : ko);
+        } catch (Exception e) {
+            Log.e(TAG, "refreshShield: " + e.getMessage());
+        }
+    }
+
+    private boolean isDeviceAdminActive() {
+        try {
+            android.app.admin.DevicePolicyManager dpm =
+                    (android.app.admin.DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+            ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
+            return dpm != null && dpm.isAdminActive(adminComponent);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private int getColorCompat(int resId) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                return getColor(resId);
+            } else {
+                //noinspection deprecation
+                return getResources().getColor(resId);
+            }
+        } catch (Exception e) {
+            return 0xFF6B7280;
+        }
+    }
+
+    private void showHelpDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Comment ca marche ?")
+                .setMessage("1) Inscrivez votre matricule LEX et choisissez un code PIN.\n\n" +
+                        "2) Gardez la localisation, la camera et l acces SIM actives : " +
+                        "le bouclier ci-dessus doit etre tout vert.\n\n" +
+                        "3) En cas de vol, la direction declenche l alarme a distance : " +
+                        "sonnerie forte, photo secrete et position envoyees.\n\n" +
+                        "4) Seul votre code PIN arrete l alarme, ici ou sur l ecran rouge.")
+                .setPositiveButton("Compris", null)
+                .show();
     }
 
     private void showMandatoryLockGuide() {
@@ -97,7 +187,7 @@ public class MainActivity extends AppCompatActivity {
                         "Pour empêcher un voleur de désactiver facilement cette protection, nous vous recommandons " +
                         "d'épingler l'application (elle restera au premier plan tant qu'on ne saisit pas votre code) :\n\n" +
                         "ÉTAPE 1 : Ouvrez les applications récentes (le carré en bas de votre écran).\n" +
-                        "ÉTAPE 2 : Restez appuyé sur 'Bloc-note'.\n" +
+                        "ÉTAPE 2 : Restez appuyé sur 'MYSAFELEX'.\n" +
                         "ÉTAPE 3 : Cliquez sur l'icône du Cadenas 🔒.\n\n" +
                         "Vous pouvez continuer sans épingler l'app, mais la protection sera plus facile à désactiver.")
                 .setCancelable(false)
@@ -169,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
                             txtToken.setText("Système de sécurité: ACTIF ✔");
                             btnLogin.setEnabled(true);
                             btnLogin.setText("SAUVEGARDER");
+                            prefillEmergencyNumber();
                             setupLoginClickListener();
                         });
             } catch (Exception e) {
@@ -182,6 +273,7 @@ public class MainActivity extends AppCompatActivity {
             txtToken.setText("Système de sécurité: ACTIF ✔");
             btnLogin.setEnabled(true);
             btnLogin.setText("SAUVEGARDER");
+            prefillEmergencyNumber();
             setupLoginClickListener();
         }
         updateStatusCard();
@@ -202,6 +294,35 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void prefillEmergencyNumber() {
+        try {
+            android.widget.EditText editEmergency = findViewById(R.id.editEmergencyNumber);
+            if (editEmergency != null) {
+                String saved = prefs.getString("emergency_number", "");
+                if (!saved.isEmpty()) editEmergency.setText(saved);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "prefillEmergency: " + e.getMessage());
+        }
+    }
+
+    private String readEmergencyNumber() {
+        try {
+            android.widget.EditText editEmergency = findViewById(R.id.editEmergencyNumber);
+            if (editEmergency != null && editEmergency.getText() != null) {
+                String n = editEmergency.getText().toString().replaceAll("[^0-9+]", "");
+                if (n.length() >= 8 && n.length() <= 20) return n;
+                if (!n.isEmpty()) {
+                    Toast.makeText(this, "Numero de secours invalide (8-20 chiffres).",
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "readEmergency: " + e.getMessage());
+        }
+        return prefs.getString("emergency_number", "");
+    }
+
     private void requestMissingPermissions() {
         java.util.List<String> needed = new java.util.ArrayList<>();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -216,6 +337,12 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
                 != PackageManager.PERMISSION_GRANTED) {
             needed.add(Manifest.permission.READ_PHONE_STATE);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
+                != PackageManager.PERMISSION_GRANTED
+                && !prefs.getString("emergency_number", "").isEmpty()) {
+            // SMS de secours : demandé seulement si un numero est enregistré.
+            needed.add(Manifest.permission.SEND_SMS);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
@@ -401,10 +528,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onRegistered(String matricule, String code) {
+        String emergency = readEmergencyNumber();
         try {
             String pinHash = SecurityUtils.hashPin(this, code);
             prefs.edit().putString("matricule", matricule)
                     .putString("pin_hash", pinHash)
+                    .putString("emergency_number", emergency)
                     .remove("pin_code").apply();
         } catch (Exception e) {
             Log.e(TAG, "Hachage PIN impossible", e);

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Bouclier blanc simplifié (le fond rouge vient de ic_launcher.xml) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,22l24,9v19c0,16 -10.5,27.5 -24,34c-13.5,-6.5 -24,-18 -24,-34v-19z" />
+    <!-- Corps du cadenas rouge au centre -->
+    <path
+        android:fillColor="#B71C1C"
+        android:pathData="M46,54h16a2,2 0 0,1 2,2v12a2,2 0 0,1 -2,2h-16a2,2 0 0,1 -2,-2v-12a2,2 0 0,1 2,-2z" />
+    <!-- Anse du cadenas -->
+    <path
+        android:fillColor="#B71C1C"
+        android:pathData="M49,54v-4a5,5 0 0,1 10,0v4h-3.2v-4a1.8,1.8 0 0,0 -3.6,0v4z" />
+    <!-- Trou de serrure blanc -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,59m-2.2,0a2.2,2.2 0 1,0 4.4,0a2.2,2.2 0 1,0 -4.4,0M53,61h2l-0.7,4h-0.6z" />
+</vector>
