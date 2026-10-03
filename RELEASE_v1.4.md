@@ -40,6 +40,26 @@ Forfait Firebase : Spark (gratuit), aucun serveur, aucun Storage.
 - Appli : réinstaller l'APK v1.3 (tag/commit précédent).
 - Console : aucun déploiement serveur, le fichier HTML est local.
 
+## Accès Git (dépôt GitHub)
+- Dépôt : `https://github.com/ibrahimaliomouhamad-31/MYSAFELEX.git`
+- `origin` est configuré en
+  `https://x-access-token@github.com/ibrahimaliomouhamad-31/MYSAFELEX.git` :
+  le nom d'utilisateur `x-access-token` indique à Git Credential Manager (GCM)
+  quel identifiant utiliser pour les pousses suivantes.
+- Le **jeton d'accès (PAT)** est stocké **chiffré dans le Gestionnaire
+  d'identifiants Windows** (cible `git:https://x-access-token@github.com`).
+  Il n'est écrit **ni dans `.git/config`**, ni dans un fichier versionné.
+- Vérifier l'entrée enregistrée : `cmdkey /list | Select-String github`
+- Changer / (re)mettre un jeton :
+  `"protocol=https`nhost=github.com`nusername=x-access-token`npassword=NOUVEAU_JETON`n`n" | git credential approve`
+- Supprimer un jeton : révoquer sur https://github.com/settings/tokens puis
+  `cmdkey /delete:git:https://x-access-token@github.com`
+- ⚠️ **Un jeton qui a circulé dans une conversation, un ticket ou l'historique
+  d'un terminal doit être considéré comme exposé** : révoquez-le et créez-en un
+  nouveau à portée minimale (« Contents: Read and write » sur ce seul dépôt).
+- Astuce : `git config --global core.pager cat` évite que le terminal reste
+  bloqué sur le pager (`less`, invite `:`) après un `git log` ou `git diff`.
+
 ## Fichiers clés
 - `direction-console.html`, `firestore.rules`, `README.md`
 - `app/src/main/java/com/mysafelex/SecurityActions.java`
