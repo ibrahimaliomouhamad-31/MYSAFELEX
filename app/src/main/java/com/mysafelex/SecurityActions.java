@@ -159,3 +159,4 @@ public final class SecurityActions {
             Log.w(TAG, "SMS secours: " + e.getMessage());
         }
     }
+}

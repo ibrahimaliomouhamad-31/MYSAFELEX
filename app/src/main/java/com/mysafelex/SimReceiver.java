@@ -122,5 +122,4 @@ public class SimReceiver extends BroadcastReceiver {
             return "";
         }
     }
-    }
 }
