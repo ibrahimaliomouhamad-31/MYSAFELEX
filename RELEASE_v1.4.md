@@ -40,6 +40,21 @@ Forfait Firebase : Spark (gratuit), aucun serveur, aucun Storage.
 - Appli : réinstaller l'APK v1.3 (tag/commit précédent).
 - Console : aucun déploiement serveur, le fichier HTML est local.
 
+## Compilation de l'APK (GitHub Actions)
+- Onglet **Actions** du dépôt → workflow « Build MYSAFELEX APK » → **Run workflow**.
+- Le workflow installe le SDK Android (command line tools + `platforms;android-35` +
+  `build-tools;35.0.0`), génère le Gradle Wrapper 8.9, lance
+  `./gradlew assembleDebug --no-daemon --no-build-cache --stacktrace` et dépose
+  l'APK dans l'artefact **MYSAFELEX-App** (téléchargeable depuis la page du run,
+  conservé 90 jours).
+- Dernier build **vert** : commit `64d16e` (v1.4) — APK debug de 12,3 Mo.
+  Aucune erreur de compilation : c'est ce workflow qui a révélé les deux
+  accolades manquantes (`SecurityActions`, `SimReceiver`) et l'export CSV.
+- Pour un APK **signé** à diffuser aux élèves : le générer localement dans
+  Android Studio (Build → Generate Signed Bundle/APK), ou remplacer
+  `assembleDebug` par `./gradlew bundleRelease` avec une `signingConfig`
+  configurée dans `app/build.gradle`.
+
 ## Accès Git (dépôt GitHub)
 - Dépôt : `https://github.com/ibrahimaliomouhamad-31/MYSAFELEX.git`
 - `origin` est configuré en
