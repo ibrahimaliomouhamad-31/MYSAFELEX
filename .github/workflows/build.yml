@@ -48,7 +48,10 @@ jobs:
         run: gradle wrapper --gradle-version 8.9
 
       - name: Build APK
-        run: ./gradlew assembleDebug --no-daemon --no-build-cache
+        run: |
+          df -h . | tail -2
+          free -m | head -2
+          ./gradlew assembleDebug --no-daemon --no-build-cache --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
